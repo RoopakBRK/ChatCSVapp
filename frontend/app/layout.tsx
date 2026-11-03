@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chat CSV",
+  title: "CSVChat",
   description: "Upload CSV files and ask questions about your data",
 };
 

@@ -3,13 +3,14 @@ import os
 import uvicorn
 from fastapi import FastAPI, File, Form, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from api.route import chat as chat_route
 from api.route import files as files_route
 from api.route import health as health_route
 from api.route import query as query_route
 from schemas.chat import ChatRequest, ChatResponse, QueryRequest, QueryResult
-from schemas.files import SessionFiles, UploadResponse
+from schemas.files import SessionFiles, UploadResponse, UrlUploadRequest
 
 app = FastAPI(title="ChatAPP")
 
@@ -45,16 +46,39 @@ def upload_files(
     return files_route.upload_files(files, session_id)
 
 
+@app.post("/files/url", response_model=UploadResponse, responses={400: {}})
+def upload_from_url(req: UrlUploadRequest):
+    """Add a CSV from a link: a direct URL, or a Google Drive / Sheets, Dropbox or GitHub share link."""
+    return files_route.upload_from_url(req)
+
+
+@app.delete("/files/{name}", response_model=SessionFiles, responses={400: {}, 404: {}})
+def delete_file(name: str, session_id: str = Query(...)):
+    """Remove an uploaded file: its table, its CSV on disk, and any links to other tables."""
+    return files_route.delete_file(session_id, name)
+
+
 @app.get("/files", response_model=SessionFiles, responses={400: {}, 404: {}})
 def list_files(session_id: str = Query(...)):
     """Tables, cleaning steps and links between tables for a session."""
     return files_route.list_files(session_id)
 
 
-@app.post("/chat", response_model=ChatResponse, responses={400: {}, 404: {}, 409: {}, 422: {}, 429: {}, 502: {}, 503: {}})
+@app.post("/chat", response_model=ChatResponse, responses={400: {}, 404: {}, 409: {}, 422: {}, 429: {}, 502: {}, 503: {}, 504: {}})
 def chat(req: ChatRequest):
     """Ask a question about the session's tables."""
     return chat_route.answer_question(req)
+
+
+@app.post("/chat/stream")
+def chat_stream(req: ChatRequest):
+    """Same as /chat, but streams progress as newline-delimited JSON:
+    {"type":"step","step":"understanding|running|writing"} ... then {"type":"result","data":...} or {"type":"error",...}."""
+    return StreamingResponse(
+        chat_route.stream_answer(req),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/query", response_model=QueryResult, responses={400: {}, 404: {}, 422: {}})

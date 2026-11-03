@@ -11,17 +11,20 @@ const Heading = ({ children }: { children: React.ReactNode }) => (
   <h3 className="mb-1 font-semibold uppercase tracking-wide text-muted">{children}</h3>
 );
 
-export default function TableSummary({ file }: { file: FileSummary }) {
+export default function TableSummary({ file, onRemove }: { file: FileSummary; onRemove: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const removed = file.rows_read - file.row_count;
   const changes = file.cleaning_steps.filter((s) => s.changes_data).length;
 
   return (
-    <li className="rounded-xl border border-border bg-glass-strong text-sm">
+    <li className="depth rounded-xl border border-border bg-white text-sm">
+      <div className="flex items-start">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-start justify-between gap-2 px-3 py-2.5 text-left"
+        className="flex min-w-0 flex-1 items-start justify-between gap-2 py-2.5 pl-3 text-left"
       >
         <span className="min-w-0">
           <span className="block truncate font-semibold" title={file.file_name}>
@@ -35,6 +38,42 @@ export default function TableSummary({ file }: { file: FileSummary }) {
         </span>
         <span className="mt-1 text-xs text-muted">{open ? "▾" : "▸"}</span>
       </button>
+      <button
+        onClick={() => setConfirming(true)}
+        aria-label={`Remove ${file.file_name}`}
+        title="Remove this file"
+        className="m-1.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-rose-50 hover:text-rose-600"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
+        </svg>
+      </button>
+      </div>
+
+      {confirming && (
+        <div role="alertdialog" aria-label="Confirm removal" className="mx-3 mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-900">
+          <span>
+            Remove <b>{file.file_name}</b>? Its table and the CSV are deleted from this chat.
+          </span>
+          <span className="flex gap-1.5">
+            <button onClick={() => setConfirming(false)} className="rounded-full px-2.5 py-1 font-semibold hover:bg-white">
+              Cancel
+            </button>
+            <button
+              disabled={removing}
+              onClick={async () => {
+                setRemoving(true);
+                await onRemove();
+                setRemoving(false);
+                setConfirming(false);
+              }}
+              className="rounded-full bg-rose-600 px-3 py-1 font-semibold text-white disabled:opacity-50"
+            >
+              {removing ? "Removing…" : "Remove"}
+            </button>
+          </span>
+        </div>
+      )}
 
       {open && (
         <div className="space-y-3 border-t border-border px-3 py-3 text-xs">

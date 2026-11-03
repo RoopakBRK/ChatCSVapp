@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { errorMessage, runQuery, sendChat } from "@/lib/api";
-import type { ChatAnswer, ChatLogEntry, HistoryTurn } from "@/lib/api";
+import { ApiError, errorMessage, runQuery, sendChat } from "@/lib/api";
+import type { ChatAnswer, ChatLogEntry, ChatStep, HistoryTurn } from "@/lib/api";
 
 export type ChatItem =
   | { id: string; kind: "user"; text: string }
@@ -12,6 +12,7 @@ export type ChatItem =
   | { id: string; kind: "error"; text: string };
 
 const HISTORY_TURNS = 8;
+const CLIENT_DEADLINE_MS = 65_000; // the backend gives up at 60 s; this is the browser-side backstop
 const newId = () => crypto.randomUUID();
 
 function toHistory(items: ChatItem[]): HistoryTurn[] {
@@ -50,15 +51,18 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
   const [items, setItems] = useState<ChatItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [step, setStep] = useState<ChatStep | null>(null);
   const latestLoad = useRef(0);
+  const controller = useRef<AbortController | null>(null);
 
   /** Show a saved chat. `id` null means messages saved before chats were tracked by session. */
-  const load = useCallback(async (id: string | null, entries: ChatLogEntry[]) => {
+  const load = useCallback(async (id: string | null, entries: ChatLogEntry[]): Promise<ChatItem[] | null> => {
     const ticket = ++latestLoad.current;
     const built = await restore(id, entries);
-    if (ticket !== latestLoad.current) return; // the user already moved on to another chat
+    if (ticket !== latestLoad.current) return null; // the user already moved on to another chat
     setItems(built);
     setLoaded(true);
+    return built;
   }, []);
 
   const reset = useCallback(() => {
@@ -86,8 +90,15 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
       const history = toHistory(items);
       add({ id: newId(), kind: "user", text }, { role: "user", content: text }, sessionId);
       setLoading(true);
+      setStep("understanding");
+      const abort = new AbortController();
+      controller.current = abort;
+      const timer = setTimeout(() => abort.abort(new DOMException("Timed out", "TimeoutError")), CLIENT_DEADLINE_MS);
       try {
-        const res = await sendChat({ message: text, session_id: sessionId, history });
+        const res = await sendChat(
+          { message: text, session_id: sessionId, history },
+          { signal: abort.signal, onStep: setStep },
+        );
         if (res.type === "clarification") {
           add({ id: newId(), kind: "clarification", text: res.question }, { role: "assistant", content: res.question }, sessionId);
           return null;
@@ -104,15 +115,26 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
         );
         return item;
       } catch (e) {
+        if (e instanceof ApiError && e.code === "stopped") {
+          const note = "Stopped. No answer was produced for that question.";
+          add({ id: newId(), kind: "text", role: "system", text: note }, { role: "system", content: note }, sessionId);
+          return null;
+        }
         const message = errorMessage(e);
         add({ id: newId(), kind: "error", text: message }, { role: "system", content: message }, sessionId);
         return null;
       } finally {
+        clearTimeout(timer);
+        controller.current = null;
         setLoading(false);
+        setStep(null);
       }
     },
     [sessionId, loading, items, add],
   );
 
-  return { items, loading, loaded, send, notice, load, reset };
+  /** Stop waiting for the current answer. */
+  const stop = useCallback(() => controller.current?.abort(), []);
+
+  return { items, loading, step, loaded, send, stop, notice, load, reset };
 }

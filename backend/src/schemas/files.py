@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RejectedFile(BaseModel):
@@ -73,8 +73,14 @@ class SessionFiles(BaseModel):
     session_id: str
     files: list[FileSummary]
     relationships: list[Relationship]
+    starter_questions: list[str] = []  # clickable first questions built from the schema
 
 
 class UploadResponse(SessionFiles):
     uploaded: list[str]  # file names accepted in this request
     rejected: list[RejectedFile] = []
+
+
+class UrlUploadRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+    session_id: str | None = None

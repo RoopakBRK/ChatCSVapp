@@ -8,3 +8,4 @@ groq
 pytest
 python-multipart
 python-dotenv
+httpx

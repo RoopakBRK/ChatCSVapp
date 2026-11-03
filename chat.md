@@ -73,10 +73,80 @@
 - **Chart fix:** bar-chart labels now tilt when names are long, so they stop overlapping.
 - **Verified in the browser:** default closed panel, upload, answer with chart, second chat, switching back via History (chart redrawn), reload (panel closed, last chat restored). 49 backend tests pass.
 
+### 8. Faster failure, real progress, starter questions, follow-ups
+**You:** Settings to the bottom left; a round avatar icon for the Results button; add an abort for slow answers (one overall deadline per question of about 60 s, fewer retries, an AbortController and a Stop button); give each session its own lock or a per-session DuckDB file; show the chart inside the answer bubble with "expand" opening the results panel; progress steps ("understanding question, running query, writing answer") plus Stop instead of dots; 3 to 4 clickable starter questions built from the schema after upload; follow-up chips after each answer.
+
+**Claude:**
+- **Deadline and retries:** one 60 s budget per question across planning, repair, query and explanation. Each AI call has a 20 s timeout and at most one retry (was three). If a retry's wait would pass the deadline it is not attempted. A timeout returns a 504 with a friendly message.
+- **Real bug found and fixed:** "what are the columns in this csv?" failed with "AI service didn't respond properly". The model answered with no SQL, and every retry sent the identical prompt and got the identical reply. Retries now tell the model what was wrong, and the prompt says that questions about columns or row counts are answered with `information_schema` or `COUNT(*)` SQL.
+- **Progress and Stop:** new `POST /chat/stream` sends newline-delimited JSON (`step` events, then a `result` or `error`); `/chat` shares the same code. If the browser aborts, the backend does no further steps. The frontend uses an `AbortController` (also a 65 s backstop) and shows the three steps with a Stop button. Stopping adds "Stopped. No answer was produced for that question."
+- **Per-session DuckDB file:** each session is `data/sessions/<id>/session.duckdb` plus `manifest.json` (summaries, cleaning log, links, and a size/mtime stamp for each CSV). Restoring just opens the file; only new or changed CSVs are cleaned again, and a damaged file is rebuilt from the CSVs. Each session also has its own lock, so one session's build never blocks another's. Limitation: one process per session file.
+- **Starter questions:** built from the schema (links, dates, categories, missing values, outliers) in `chatapp/suggestions.py`, returned as `starter_questions` by `/files`.
+- **UI:** Settings at the bottom of the sidebar; Results is a round gradient avatar button with a count; the chart is drawn inside the answer bubble with an Expand button that opens and scrolls the results panel; follow-up chips ("Break down by ...", "Show by month", "Show as a table") appear under the latest answer. "Show as a table" opens the panel with the data table expanded.
+- **Verified:** 68 backend tests; in the browser: upload, starter questions, progress steps, in-bubble chart, follow-ups, "Show as a table", and Stop.
+
+---
+
+### 9. Better charts
+**You:** In `components/charts`, use better charts: axis labels, formatted tooltip values (currency and thousands), readable date ticks, a switch between bar, line and table, and download as PNG or CSV.
+
+**Claude:**
+- **Axis titles:** every chart shows the x and y column names in readable form ("Month", "Revenue").
+- **Formatted values:** tooltips and axis ticks use currency for money columns (found by name: price, revenue, amount, total...) and thousands separators otherwise, with compact ticks ($3.8M, 950K). Counts, ratings and rates are not treated as money, and ids and years never get separators. Fixed to US English and USD (`lib/chartFormat.ts`).
+- **Date ticks:** ISO dates and timestamps are detected, and the axis reads as years, months ("Feb 2024") or days ("Nov 3") depending on the data; tooltips show the full date ("August 2024").
+- **Switch and table:** Bar / Line / Table (and Pie when that is what the answer suggested), in both the answer bubble and the results panel. The table view uses the same formatting and keeps the header in view.
+- **Downloads:** PNG (title included, 2x resolution, no library; disabled in the table view) and CSV (raw values, UTF-8 with a byte-order mark, text cells that start with = + - @ are neutralised so they cannot run as spreadsheet formulas).
+- **Pie charts:** slices are labelled on the chart (name and percent) instead of in a separate legend, so PNG exports keep the labels.
+- **Verified in the browser:** the line chart with date and currency ticks, the tooltip, the table view, the pie view, and both downloads (inspected in the page without saving files: a 1084 by 632 PNG and a 12-line CSV with the byte-order mark).
+
+### 10. Plotly question, darker chat card, full-height layout
+**You:** Should we use Plotly for the charts (bar, line, scatter and so on) for better visuals and handling? Make the chat area a bit darker with gradients so the graphs and chats are visible, and let it go to the top, since some space at the top is left blank.
+
+**Claude:**
+- **Plotly:** not installed. The rule for this project is to ask before adding any library other than Recharts and Tailwind. Recommendation given in chat: stay with Recharts for now (measured: the Recharts chunk in this build is 452 KB, 129 KB gzipped; Plotly's slimmest build is 1.2 MB, the full build 6.2 MB). Plotly would be worth it for box plots, heatmaps, drag-zoom and 3D, which the backend does not produce today. Decision left to the user.
+- **Layout:** the blank row above the chat card is gone. The card now runs to the top, like the sidebar and the results panel. The results avatar and the mobile History button float inside the card's top corners.
+- **Colour:** the chat card has a deeper blue to lavender to pink gradient, so white bubbles, charts and cards stand out against it.
+- **Verified in the browser** with the Results panel closed and open. Lint, typecheck and build pass.
+
+### 11. Plotly charts, one chart at a time, 3D isometric views, resizable history
+**You:** Yes, use Plotly. Don't bombard all the graphs at once: ask the user as a follow-up if they want other types of graph, and only then show them. /chat needs to change: use isometric visuals, a bit of a 3D view for charts. The history sidebar should be collapsible and draggable to resize. Better quality charts, not only bars.
+
+**Claude:**
+- **Plotly:** added one package, `plotly.js-dist-min` 4.2.0, used directly (no React wrapper). It is loaded only when the first chart appears. Recharts was removed.
+- **One chart at a time:** each answer draws one chart, the one the model suggested. Under it: "Want to see this another way?" with chips for the types that suit the data; picking one swaps the chart in place. Only the newest answer draws automatically; older answers show "Show chart". The results panel only draws the chart of the focused answer. This also keeps WebGL contexts low.
+- **Chart types:** 3D bars and 3D area (isometric: solid shapes, an orthographic camera, blue at the base to pink at the top, drag to rotate), bars with an offset shadow, a line over a gradient area, donut (largest slice pulled out, total in the middle), scatter (sized and coloured by value), funnel, treemap, radar, histogram, box plot, and table. Bar answers open as 3D bars when there are 20 categories or fewer.
+- **Suitability rules:** date axes get line, 3D area, bars and scatter; categories get bars, donut, treemap, funnel and radar; histogram and box plot need at least 8 values. Donut, treemap and funnel are only offered when values can be added up, not for averages, medians, min/max or rates (detected from the column name and the SQL).
+- **Backend:** the model can now suggest `scatter` (kept only when x is numeric, otherwise shown as bars). The written explanation now rounds numbers (2 decimals, thousands separators).
+- **Depth:** an isometric-style raised look (`.depth`) on bubbles and cards, and a soft "stage" behind charts.
+- **History sidebar:** collapses to a 64 px rail (expand, New chat, Settings) and resizes by dragging its edge (220 to 480 px; arrow keys work; double-click resets). Both are remembered between visits.
+- **Exports:** PNG now comes from Plotly, re-rendered off screen with the title (works for the 3D charts); CSV unchanged.
+- **Verified in the browser:** every chart type, switching between 3D and 2D, collapse and drag (280 to 380 px), and a 3D PNG export (1280 by 752, inspected in the page without saving). 69 backend tests pass.
+
+### 12. Delete files, health, results-only charts, upload options, CSVChat front page
+**You:** Add DELETE /files/{name}. /health should report whether the Groq key is configured. Chart types only in the results section; only follow-up questions in the chat. When Results is closed the chats don't go fully to the left. Add files should offer upload from a link, from the computer and from Drive. A bigger Ask button. A basic front page with FAQs, footer, navbar, about section and so on. The app is called CSVChat.
+
+**Claude:**
+- **Backend:**
+  - `DELETE /files/{name}?session_id=` drops the table, deletes the CSV, and recomputes links and starter questions (persisted in the manifest).
+  - `GET /health` returns `groq_key_configured` and the model, never the key itself.
+  - New `POST /files/url` adds a CSV from a link. Google Drive, Google Sheets, Dropbox and GitHub share links are converted to direct downloads. Protected against SSRF: http(s) only, public addresses only (checked on every redirect), at most 3 redirects, 20 s and 50 MB caps, HTML pages refused with a hint. Residual DNS-rebinding risk documented in `chatapp/remote.py`.
+  - All routes are declared in `main.py`. 89 tests.
+- **Google Drive:** a real Drive file picker needs a Google Cloud OAuth client and API key, so "Upload from Google Drive" takes a share link ("Anyone with the link").
+- **Chat vs results:** the chat shows the answer text, "View chart & data in results", and the follow-up questions. Charts and the "Want to see this another way?" chart chips are only in the Results panel. Messages use the full width of the chat card.
+- **Composer:** `+` opens a menu: Upload from computer, Upload from a link, Upload from Google Drive. The Ask button is larger, with an arrow.
+- **Results:** each table card has a remove (bin) button with an inline confirm. Settings shows the AI service status.
+- **Front page (CSVChat):** sticky navbar (About, Features, How it works, FAQ, Login, Open app), hero with an illustrative preview, About, Features, How it works, an 8-question FAQ that describes exactly what is sent to Groq, and a footer.
+- **Bugs found while testing and fixed:**
+  - The link form was nested inside the composer's `<form>`, so Enter did nothing.
+  - Escape didn't close the `+` menu.
+  - The Settings popover was hidden behind the chat card when the sidebar was collapsed.
+  - The sticky navbar didn't stick.
+  - Starter questions read "t 2014 apple stock".
+- **Verified in the browser:** front page, link upload (a real GitHub CSV), answer and chart split, file removal, the full-width layout with Results closed, and Settings.
+
 ---
 
 ## App chat log
-
 <!-- msg role=system ts=2026-11-03T14:29:38.214Z session=3c150fa960b644268de92c13df2ebf18 -->
 **System** · 2026-11-03T14:29:38.214Z
 
@@ -93,5 +163,60 @@ Tell me what are the columns in this csv file ?
 **System** · 2026-11-03T14:30:03.968Z
 
 The AI service didn't respond properly. Please try again in a moment.
+<!-- msg role=system ts=2026-11-03T15:12:10.594Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**System** · 2026-11-03T15:12:10.594Z
+
+Uploaded: shipments.csv
 
 
+<!-- msg role=user ts=2026-11-03T15:12:16.613Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**You** · 2026-11-03T15:12:16.613Z
+
+what is the shipments csv about ?
+
+
+<!-- msg role=assistant ts=2026-11-03T15:12:18.062Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**Assistant** · 2026-11-03T15:12:18.062Z
+
+The shipments CSV lists each shipment with its unique ID, the order it belongs to, the date it was shipped, the carrier used, the tracking number, the delivery date, and the current status of the shipment.
+
+```sql
+SELECT column_name, data_type FROM information_schema.columns WHERE table_name='shipments'
+```
+
+<!-- result {"question":"what is the shipments csv about ?","sql":"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='shipments'","chart":null} -->
+
+<!-- msg role=user ts=2026-11-03T15:12:32.096Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**You** · 2026-11-03T15:12:32.096Z
+
+Break this down by carrier
+
+
+<!-- msg role=assistant ts=2026-11-03T15:12:33.422Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**Assistant** · 2026-11-03T15:12:33.422Z
+
+FedEx has 5,000 shipments, UPS has 5,000 shipments, and DHL has 5,000 shipments.
+
+```sql
+SELECT carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY carrier
+```
+
+<!-- result {"question":"Break this down by carrier","sql":"SELECT carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY carrier","chart":{"type":"bar","x":"carrier","y":"shipment_count","title":"Shipments per Carrier"}} -->
+<!-- msg role=user ts=2026-11-03T15:19:52.423Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**You** · 2026-11-03T15:19:52.423Z
+
+Show this by month
+
+
+<!-- msg role=assistant ts=2026-11-03T15:19:54.895Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
+**Assistant** · 2026-11-03T15:19:54.895Z
+
+In November 2023, DHL had 249 shipments, FedEx 332, and UPS 292.  
+In December 2023, DHL had 400 shipments, FedEx 411, and UPS 415.  
+In January 2024, DHL had 415 shipments, FedEx 434, and UPS 410.
+
+```sql
+SELECT date_trunc('month', shipment_date) AS month, carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY month, carrier ORDER BY month, carrier
+```
+
+<!-- result {"question":"Show this by month","sql":"SELECT date_trunc('month', shipment_date) AS month, carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY month, carrier ORDER BY month, carrier","chart":null} -->

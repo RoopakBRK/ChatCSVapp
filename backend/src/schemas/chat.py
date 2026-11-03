@@ -17,7 +17,7 @@ class ChatRequest(BaseModel):
 
 
 class ChartOut(BaseModel):
-    type: Literal["bar", "line", "pie"]
+    type: Literal["bar", "line", "pie", "scatter"]
     x: str
     y: str
     title: str

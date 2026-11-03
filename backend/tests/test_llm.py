@@ -72,16 +72,16 @@ def test_clarification():
 
 
 def test_retries_transient_errors_then_succeeds():
-    client = FakeClient([conn_error(), conn_error(), json.dumps(GOOD)])
+    client = FakeClient([conn_error(), json.dumps(GOOD)])
     assert llm.generate_plan("q", FILES, [], client=client).sql
-    assert client.calls == 3
+    assert client.calls == 2
 
 
-def test_retries_invalid_json_then_gives_up_after_three_retries():
-    client = FakeClient(["not json"] * 4)
+def test_retries_invalid_json_then_gives_up_after_one_retry():
+    client = FakeClient(["not json"] * 2)
     with pytest.raises(llm.LLMError):
         llm.generate_plan("q", FILES, [], client=client)
-    assert client.calls == 4  # 1 attempt + 3 retries
+    assert client.calls == 2  # 1 attempt + 1 retry
 
 
 def test_non_retryable_error_fails_immediately():
@@ -132,8 +132,42 @@ def test_rate_limit_waits_for_retry_after_then_raises_specific_error(monkeypatch
     sleeps = []
     monkeypatch.setattr(llm.time, "sleep", sleeps.append)
     resp = httpx.Response(429, headers={"retry-after": "7"}, request=httpx.Request("POST", "x"))
-    client = FakeClient([RateLimitError("slow down", response=resp, body=None) for _ in range(4)])
+    client = FakeClient([RateLimitError("slow down", response=resp, body=None) for _ in range(2)])
     with pytest.raises(llm.LLMRateLimitError):
         llm.generate_plan("q", FILES, [], client=client)
-    assert client.calls == 4
+    assert client.calls == 2
     assert sleeps[0] == 7.0 and max(sleeps) <= llm.MAX_WAIT_SECONDS  # honours Retry-After, but is capped
+
+
+def test_deadline_in_the_past_means_no_call():
+    client = FakeClient([json.dumps(GOOD)])
+    with pytest.raises(llm.LLMTimeoutError):
+        llm.generate_plan("q", FILES, [], client=client, deadline=llm.time.monotonic() - 1)
+    assert client.calls == 0
+
+
+def test_call_timeout_is_capped_by_the_deadline(monkeypatch):
+    seen = []
+    client = FakeClient([json.dumps(GOOD)])
+    original = client._create
+    client.chat.completions.create = lambda **kw: (seen.append(kw["timeout"]), original(**kw))[1]
+    llm.generate_plan("q", FILES, [], client=client, deadline=llm.time.monotonic() + 3)
+    assert seen[0] <= 3 < llm.TIMEOUT_SECONDS
+
+
+def test_no_retry_when_the_wait_would_pass_the_deadline():
+    client = FakeClient([conn_error(), json.dumps(GOOD)])
+    with pytest.raises(llm.LLMTimeoutError):
+        llm.generate_plan("q", FILES, [], client=client, deadline=llm.time.monotonic() + 0.5)  # backoff is 1s
+    assert client.calls == 1
+
+
+def test_invalid_reply_is_corrected_with_feedback_not_repeated():
+    seen = []
+    client = FakeClient([json.dumps({"sql": None, "needs_clarification": False}), json.dumps(GOOD)])
+    original = client._create
+    client.chat.completions.create = lambda **kw: (seen.append(kw["messages"]), original(**kw))[1]
+    assert llm.generate_plan("what columns are there?", FILES, [], client=client).sql
+    assert len(seen) == 2 and len(seen[1]) == len(seen[0]) + 2
+    assert "not valid" in seen[1][-1]["content"] and "sql is required" in seen[1][-1]["content"]
+    assert seen[1][-2]["role"] == "assistant"

@@ -1,21 +1,30 @@
-"""One in-memory DuckDB database per upload session.
+"""One DuckDB database per upload session, stored as a file next to the session's CSVs.
 
-Each cleaned CSV becomes its own table. The raw CSVs stay on disk under data/sessions/<id>/,
-so if a session is evicted or the server restarts, get_session() rebuilds the database from them
-(cleaning is deterministic, so the result is identical).
+    data/sessions/<id>/orders.csv ...   the raw uploads (the source of truth)
+    data/sessions/<id>/session.duckdb   the cleaned tables, one per CSV
+    data/sessions/<id>/manifest.json    summaries, cleaning log and links, plus a size/mtime stamp
+                                        of each CSV so a changed file is noticed
+
+Restoring a session (after a restart or idle eviction) is just opening session.duckdb and reading
+the manifest; only new or changed CSVs are cleaned again. If the database file is missing or
+damaged, everything is rebuilt from the CSVs (cleaning is deterministic).
+
+Locking: every session has its own lock, so building one session never blocks another. The global
+registry lock is only held for dictionary lookups.
 
 PRODUCTION NOTES - what would change:
-  * Persistence: write each session to a DuckDB file (or Parquet) on durable storage instead of
-    memory, so restarts and multiple workers share the same data. Raw uploads go to object
-    storage (S3/GCS) rather than local disk.
-  * Metadata: keep summaries, cleaning logs and relationships in a real database (Postgres/Redis)
-    with a TTL/cleanup job, not in a Python dict.
+  * Storage: put the database files and raw uploads on shared durable storage (object storage or
+    a network volume) and use one process per file, or move the cleaned tables to Parquet/a
+    server database so several workers can read the same session.
+  * Metadata: keep summaries and cleaning logs in a real database (Postgres/Redis) with a
+    TTL/cleanup job that also deletes expired session folders.
   * Isolation: tie sessions to an authenticated user and check ownership on every request; a
     session id alone must not be the only secret. Open the database read-only when running
     model-generated SQL, and set DuckDB memory_limit / threads / per-query timeouts.
   * Scale: run cleaning in a background worker for big files and stream uploads rather than
     reading them into memory; add per-user quotas on files, rows and sessions.
 """
+import json
 import logging
 import math
 import threading
@@ -35,6 +44,9 @@ from schemas.files import (
 logger = logging.getLogger(__name__)
 
 SESSION_TTL_SECONDS = 2 * 60 * 60
+DB_NAME = "session.duckdb"
+MANIFEST_NAME = "manifest.json"
+MANIFEST_VERSION = 1
 SAMPLE_ROWS = 5
 MAX_RESULT_ROWS = 500
 QUERY_TIMEOUT_SECONDS = 15.0
@@ -88,15 +100,83 @@ def _singular(table: str) -> str:
 
 
 class SessionDB:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, db_file: Path | None = None):
         self.session_id = session_id
+        self.db_file = db_file  # None: keep everything in memory (used by tests)
         # Model-written SQL runs on this connection, so lock it down: no reading or writing files,
         # and the settings can't be changed afterwards.
-        self.con = duckdb.connect(":memory:", config={"enable_external_access": False, "lock_configuration": True})
-        self.lock = threading.RLock()
+        self.con = duckdb.connect(
+            str(db_file) if db_file else ":memory:",
+            config={"enable_external_access": False, "lock_configuration": True},
+        )
+        self.lock = threading.RLock()  # this session only; other sessions are never blocked by it
         self.last_used = time.time()
         self.files: dict[str, FileSummary] = {}  # keyed by file name
+        self.sources: dict[str, dict[str, int]] = {}  # file name -> {"size", "mtime_ns"} when it was cleaned
         self.relationships: list[Relationship] = []
+
+    # ---- persistence -----------------------------------------------------------------------
+
+    def _save_manifest(self) -> None:
+        if not self.db_file:
+            return
+        manifest = {
+            "version": MANIFEST_VERSION,
+            "sources": self.sources,
+            "files": [f.model_dump(mode="json") for f in self.files.values()],
+            "relationships": [r.model_dump(mode="json") for r in self.relationships],
+        }
+        target = self.db_file.parent / MANIFEST_NAME
+        tmp = target.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(manifest))
+        tmp.replace(target)  # atomic: a crash never leaves a half-written manifest
+
+    def adopt(self, manifest: dict) -> bool:
+        """Take over summaries saved earlier, for tables that really exist in the database file."""
+        try:
+            if manifest.get("version") != MANIFEST_VERSION:
+                return False
+            tables = {r[0] for r in self.con.execute("SELECT table_name FROM duckdb_tables()").fetchall()}
+            for raw in manifest["files"]:
+                summary = FileSummary.model_validate(raw)
+                if summary.table_name in tables and summary.file_name in manifest["sources"]:
+                    self.files[summary.file_name] = summary
+                    self.sources[summary.file_name] = manifest["sources"][summary.file_name]
+            self.relationships = [Relationship.model_validate(r) for r in manifest["relationships"]]
+            return True
+        except Exception:
+            logger.warning("Ignoring unreadable manifest for session %s", self.session_id, exc_info=True)
+            self.files.clear()
+            self.sources.clear()
+            return False
+
+    def remove_file(self, file_name: str) -> bool:
+        """Delete an uploaded file for good: table, CSV on disk, links. False if it isn't here."""
+        with self.lock:
+            if file_name not in self.files:
+                return False
+            self.forget(file_name)
+            if self.db_file:
+                (self.db_file.parent / file_name).unlink(missing_ok=True)
+            else:
+                (session_dir(self.session_id) / file_name).unlink(missing_ok=True)
+            self.relationships = self._detect_relationships()
+            self._save_manifest()
+            self.last_used = time.time()
+            return True
+
+    def is_current(self, path: Path) -> bool:
+        """True if this CSV is already loaded and hasn't changed since."""
+        st = path.stat()
+        return self.sources.get(path.name) == {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+
+    def forget(self, file_name: str) -> None:
+        """Drop a file whose CSV has been deleted from disk."""
+        with self.lock:
+            summary = self.files.pop(file_name, None)
+            self.sources.pop(file_name, None)
+            if summary:
+                self.con.execute(f"DROP TABLE IF EXISTS {q(summary.table_name)}")
 
     # ---- loading ---------------------------------------------------------------------------
 
@@ -119,7 +199,10 @@ class SessionDB:
             table = self._table_name_for(path.name)
             summary = self._build_table(table, path, result)
             self.files[path.name] = summary
+            st = path.stat()
+            self.sources[path.name] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
             self.relationships = self._detect_relationships()
+            self._save_manifest()
             self.last_used = time.time()
         return summary
 
@@ -292,17 +375,63 @@ class SessionDB:
 
 
 _sessions: dict[str, SessionDB] = {}
-_registry_lock = threading.Lock()
+_session_locks: dict[str, threading.Lock] = {}  # one per session id, so builds don't block each other
+_registry_lock = threading.Lock()  # only ever held for quick dictionary operations
 
 
 def _evict_idle() -> None:
     cutoff = time.time() - SESSION_TTL_SECONDS
     for sid in [s for s, db in _sessions.items() if db.last_used < cutoff]:
-        _sessions.pop(sid).con.close()
+        _sessions.pop(sid).con.close()  # the files stay on disk; reopening is cheap
+
+
+def _read_manifest(folder: Path) -> dict | None:
+    try:
+        return json.loads((folder / MANIFEST_NAME).read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _open_session(session_id: str) -> SessionDB | None:
+    """Open a session from disk. Only new or changed CSVs are cleaned again."""
+    folder = session_dir(session_id)
+    if not folder.is_dir():
+        return None
+    db_file = folder / DB_NAME
+    manifest = _read_manifest(folder) if db_file.exists() else None
+    try:
+        db = SessionDB(session_id, db_file)
+    except duckdb.Error:
+        logger.warning("Session database %s is damaged; rebuilding from the CSVs", db_file)
+        for stale in folder.glob(f"{DB_NAME}*"):
+            stale.unlink(missing_ok=True)
+        manifest = None
+        db = SessionDB(session_id, db_file)
+
+    if manifest and not db.adopt(manifest):
+        manifest = None
+
+    csvs = sorted(folder.glob("*.csv"))
+    gone = set(db.files) - {p.name for p in csvs}
+    for name in gone:
+        db.forget(name)
+    changed = False
+    for path in csvs:
+        if db.is_current(path):
+            continue
+        try:
+            db.load_csv(path)  # also refreshes the links and the manifest
+            changed = True
+        except CleaningError:
+            logger.warning("Skipping unreadable file %s while restoring session", path)
+    if gone and not changed:
+        db.relationships = db._detect_relationships()
+        db._save_manifest()
+    return db
 
 
 def get_session(session_id: str) -> SessionDB | None:
-    """Return the session's database, rebuilding it from the CSVs on disk if it isn't in memory."""
+    """Return the session's database, opening it from disk if it isn't loaded."""
     if not is_valid_session_id(session_id):
         return None
     with _registry_lock:
@@ -311,15 +440,16 @@ def get_session(session_id: str) -> SessionDB | None:
         if db:
             db.last_used = time.time()
             return db
-        folder = session_dir(session_id)
-        csvs = sorted(folder.glob("*.csv")) if folder.is_dir() else []
-        if not folder.is_dir():
-            return None
-        db = SessionDB(session_id)
-        for path in csvs:
-            try:
-                db.load_csv(path)
-            except CleaningError:
-                logger.warning("Skipping unreadable file %s while restoring session", path)
-        _sessions[session_id] = db
+        lock = _session_locks.setdefault(session_id, threading.Lock())
+
+    with lock:  # one thread opens this session; other sessions carry on
+        with _registry_lock:
+            db = _sessions.get(session_id)
+        if db is None:
+            db = _open_session(session_id)
+            if db is None:
+                return None
+            with _registry_lock:
+                _sessions[session_id] = db
+        db.last_used = time.time()
         return db

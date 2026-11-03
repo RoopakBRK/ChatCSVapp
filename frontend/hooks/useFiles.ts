@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { errorMessage, getFiles, uploadFiles } from "@/lib/api";
+import { deleteFile, errorMessage, getFiles, uploadFiles, uploadFromUrl } from "@/lib/api";
 import type { FileSummary, Relationship, SessionFiles } from "@/lib/api";
 
 const SESSION_KEY = "chatcsv.session_id";
@@ -12,6 +12,7 @@ export function useFiles() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileSummary[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [starters, setStarters] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false); // the saved session (if any) has been looked up
@@ -19,6 +20,7 @@ export function useFiles() {
   const apply = useCallback((data: SessionFiles | null) => {
     setFiles(data?.files ?? []);
     setRelationships(data?.relationships ?? []);
+    setStarters(data?.starter_questions ?? []);
   }, []);
 
   // After a reload, pick up the session the user was last in.
@@ -95,8 +97,45 @@ export function useFiles() {
     [sessionId, apply],
   );
 
+  /** Add a CSV from a link. Same result shape as upload(). */
+  const uploadUrl = useCallback(
+    async (url: string): Promise<{ note: string; sessionId: string } | null> => {
+      setUploading(true);
+      setError(null);
+      try {
+        const data = await uploadFromUrl(url.trim(), sessionId);
+        setSessionId(data.session_id);
+        localStorage.setItem(SESSION_KEY, data.session_id);
+        apply(data);
+        return { note: `Uploaded from link: ${data.uploaded.join(", ")}`, sessionId: data.session_id };
+      } catch (e) {
+        setError(errorMessage(e));
+        return null;
+      } finally {
+        setUploading(false);
+      }
+    },
+    [sessionId, apply],
+  );
+
+  /** Remove one uploaded file from the current session. Resolves to a note for the chat, or null on failure. */
+  const remove = useCallback(
+    async (name: string): Promise<string | null> => {
+      if (!sessionId) return null;
+      setError(null);
+      try {
+        apply(await deleteFile(sessionId, name));
+        return `Removed: ${name}`;
+      } catch (e) {
+        setError(errorMessage(e));
+        return null;
+      }
+    },
+    [sessionId, apply],
+  );
+
   return {
-    sessionId, files, relationships, uploading, error, ready,
+    sessionId, files, relationships, starters, uploading, error, ready, uploadUrl, remove,
     dismissError: () => setError(null),
     upload, openSession, startNewSession,
   };

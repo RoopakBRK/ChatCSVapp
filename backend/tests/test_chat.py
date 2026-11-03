@@ -51,7 +51,7 @@ def test_failed_sql_is_repaired_once(setup, monkeypatch):
     client, sid = setup
     calls = []
 
-    def fake(question, files, rels, history, feedback):
+    def fake(question, files, rels, history, feedback, **kw):
         calls.append(feedback)
         return plan(sql="SELECT nope FROM orders") if not feedback else plan()
 
@@ -163,3 +163,61 @@ def test_query_refuses_writes_and_bad_sessions(setup):
     assert client.post("/query", json={"session_id": sid, "sql": "DROP TABLE orders"}).status_code == 422
     assert client.post("/query", json={"session_id": sid, "sql": "SELECT nope FROM orders"}).json()["detail"]["code"] == "query_failed"
     assert client.post("/query", json={"session_id": "0" * 32, "sql": "SELECT 1"}).status_code == 404
+
+
+def test_stream_sends_steps_then_result(setup, monkeypatch):
+    import json
+
+    client, sid = setup
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan())
+    r = client.post("/chat/stream", json={"message": "who spent most?", "session_id": sid, "history": []})
+    events = [json.loads(line) for line in r.text.splitlines()]
+    assert r.headers["content-type"].startswith("application/x-ndjson")
+    assert [e["step"] for e in events if e["type"] == "step"] == ["understanding", "running", "writing"]
+    assert events[-1]["type"] == "result" and events[-1]["data"]["type"] == "answer"
+    assert events[-1]["data"]["rows"][0][0] == "bob"
+
+
+def test_stream_reports_errors_as_events(setup, monkeypatch):
+    import json
+
+    client, sid = setup
+
+    def late(*a, **k):
+        raise llm.LLMTimeoutError("deadline")
+
+    monkeypatch.setattr(llm, "generate_plan", late)
+    events = [json.loads(l) for l in client.post("/chat/stream", json={"message": "q", "session_id": sid, "history": []}).text.splitlines()]
+    assert events[-1] == {"type": "error", "status": 504, "code": "timeout", "message": events[-1]["message"]}
+    assert client.post("/chat/stream", json={"message": "q", "session_id": "0" * 32, "history": []}).text.count("session_not_found") == 1
+
+
+def test_timeout_message_on_plain_chat(setup, monkeypatch):
+    client, sid = setup
+
+    def late(*a, **k):
+        raise llm.LLMTimeoutError("deadline")
+
+    monkeypatch.setattr(llm, "generate_plan", late)
+    r = ask(client, sid)
+    assert r.status_code == 504 and r.json()["detail"]["code"] == "timeout"
+
+
+def test_deadline_is_passed_to_every_llm_call(setup, monkeypatch):
+    client, sid = setup
+    seen = []
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: (seen.append(k["deadline"]), plan())[1])
+    monkeypatch.setattr(llm, "explain_result", lambda *a, **k: (seen.append(k["deadline"]), "ok")[1])
+    assert ask(client, sid).status_code == 200
+    assert len(seen) == 2 and seen[0] == seen[1] and seen[0] > 0
+
+
+def test_scatter_kept_for_numeric_x_and_downgraded_otherwise(setup, monkeypatch):
+    client, sid = setup
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan(
+        sql="SELECT order_id, total FROM orders ORDER BY 1",
+        chart={"type": "scatter", "x": "order_id", "y": "total", "title": "Orders"}))
+    assert ask(client, sid).json()["chart"]["type"] == "scatter"
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan(
+        chart={"type": "scatter", "x": "customer", "y": "revenue", "title": "t"}))
+    assert ask(client, sid).json()["chart"]["type"] == "bar"

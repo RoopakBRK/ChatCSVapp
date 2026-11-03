@@ -5,6 +5,7 @@ import type { FileSummary, Relationship } from "@/lib/api";
 import type { ChatItem } from "@/hooks/useChat";
 import DataSummary from "@/components/upload/DataSummary";
 import ResultCard from "./ResultCard";
+import type { ChartKind } from "@/components/charts/chartKinds";
 
 type AnswerItem = Extract<ChatItem, { kind: "answer" }>;
 type Props = {
@@ -13,11 +14,15 @@ type Props = {
   relationships: Relationship[];
   answers: AnswerItem[];
   focus: { id: string } | null;
+  views: Record<string, ChartKind>;
+  onKind: (id: string, kind: ChartKind) => void;
+  onFocus: (id: string) => void;
+  onRemoveFile: (name: string) => Promise<void>;
   onClose: () => void;
 };
 
 /** Right-hand panel: the cleaned tables first, then every chart and data table as a thread. */
-export default function ResultsPanel({ open, files, relationships, answers, focus, onClose }: Props) {
+export default function ResultsPanel({ open, files, relationships, answers, focus, views, onKind, onFocus, onRemoveFile, onClose }: Props) {
   useEffect(() => {
     if (open && focus) document.getElementById(`result-${focus.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [open, focus]);
@@ -39,9 +44,18 @@ export default function ResultsPanel({ open, files, relationships, answers, focu
         {files.length === 0 && answers.length === 0 && (
           <p className="text-sm text-muted">Charts, data tables and the cleaning summary will appear here.</p>
         )}
-        {files.length > 0 && <DataSummary files={files} relationships={relationships} />}
+        {files.length > 0 && <DataSummary files={files} relationships={relationships} onRemove={onRemoveFile} />}
         {answers.map((a) => (
-          <ResultCard key={a.id} id={a.id} question={a.question} answer={a.answer} highlighted={a.id === focus?.id} />
+          <ResultCard
+            key={a.id}
+            id={a.id}
+            question={a.question}
+            answer={a.answer}
+            focused={a.id === focus?.id}
+            kind={views[a.id]}
+            onKind={(k) => onKind(a.id, k)}
+            onFocus={() => onFocus(a.id)}
+          />
         ))}
       </div>
     </aside>

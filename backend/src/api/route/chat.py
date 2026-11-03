@@ -1,10 +1,13 @@
+import json
 import logging
+import time
+from typing import Iterator
 
 import duckdb
 from fastapi import HTTPException
 
 from chatapp import llm
-from chatapp.session_db import get_session
+from chatapp.session_db import QUERY_TIMEOUT_SECONDS, get_session
 from chatapp.sessions import is_valid_session_id
 from schemas.chat import ChartOut, ChatAnswer, ChatClarification, ChatRequest, ChatResponse
 from schemas.llm import ChartSpec
@@ -13,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 MAX_PIE_SLICES = 12
 SQL_ATTEMPTS = 2  # the first try, plus one repair after a failed query
+QUESTION_DEADLINE_SECONDS = 60.0  # one overall budget for plan + repair + query + explanation
 
 
 def fail(status: int, code: str, message: str) -> HTTPException:
@@ -35,13 +39,31 @@ def check_chart(spec: ChartSpec | None, columns: list[str], rows: list[list]) ->
     if not y_values or not all(_is_number(v) for v in y_values):
         return None
     kind = spec.type
+    if kind == "scatter":
+        x_values = [r[columns.index(x)] for r in rows if r[columns.index(x)] is not None]
+        if not x_values or not all(_is_number(v) for v in x_values):
+            kind = "bar"  # a scatter needs a numeric x; fall back to something that still reads
     if kind == "pie" and (len(rows) > MAX_PIE_SLICES or any(v < 0 for v in y_values)):
         kind = "bar"
     return ChartOut(type=kind, x=x, y=y, title=spec.title or "")
 
 
-def answer_question(req: ChatRequest) -> ChatResponse:
-    """Question in, validated answer (SQL result + chart + explanation) or a clarifying question out."""
+def _step(name: str) -> dict:
+    return {"type": "step", "step": name}
+
+
+def answer_events(req: ChatRequest) -> Iterator[dict]:
+    """Work out an answer, yielding progress steps and finally a result (or an error) event.
+
+    Both /chat and /chat/stream use this. The work is lazy: if the client goes away, nothing
+    after the step it is on gets done."""
+    try:
+        yield from _answer(req)
+    except HTTPException as exc:
+        yield {"type": "error", "status": exc.status_code, **exc.detail}
+
+
+def _answer(req: ChatRequest) -> Iterator[dict]:
     if not is_valid_session_id(req.session_id):
         raise fail(400, "invalid_session", "That session isn't valid. Please upload your files again.")
     db = get_session(req.session_id)
@@ -51,6 +73,7 @@ def answer_question(req: ChatRequest) -> ChatResponse:
     if not files:
         raise fail(409, "no_files", "Upload at least one CSV file before asking a question.")
 
+    deadline = time.monotonic() + QUESTION_DEADLINE_SECONDS
     history = [t.model_dump() for t in req.history]
     feedback: list[dict[str, str]] = []
     plan = None
@@ -58,11 +81,18 @@ def answer_question(req: ChatRequest) -> ChatResponse:
 
     try:
         for attempt in range(SQL_ATTEMPTS):
-            plan = llm.generate_plan(req.message, files, db.relationships, history, feedback)
+            yield _step("understanding")
+            plan = llm.generate_plan(req.message, files, db.relationships, history, feedback, deadline=deadline)
             if plan.needs_clarification:
-                return ChatClarification(question=plan.question or "Could you tell me more about what you need?")
+                question = plan.question or "Could you tell me more about what you need?"
+                yield {"type": "result", "data": ChatClarification(question=question)}
+                return
+            yield _step("running")
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise llm.LLMTimeoutError("deadline reached before the query could run")
             try:
-                result = db.run_query(plan.sql)
+                result = db.run_query(plan.sql, timeout=min(QUERY_TIMEOUT_SECONDS, left))
                 break
             except duckdb.Error as exc:
                 logger.info("SQL failed (attempt %d): %s | %s", attempt + 1, exc, plan.sql)
@@ -78,14 +108,17 @@ def answer_question(req: ChatRequest) -> ChatResponse:
                        "or ask about columns that appear in your uploaded files.")
 
         columns, rows, truncated = result
+        yield _step("writing")
         try:
-            explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated)
+            explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated, deadline=deadline)
         except llm.LLMError:
             logger.exception("Explanation failed; returning the data without it")
             explanation = "Here is what I found." if rows else "No rows matched that question."
     except llm.LLMConfigError as exc:
         logger.error("LLM not configured: %s", exc)
         raise fail(503, "llm_not_configured", "The AI service isn't set up on the server (missing API key).")
+    except llm.LLMTimeoutError:
+        raise fail(504, "timeout", "That took longer than a minute, so I stopped. Try a simpler question, or try again.")
     except llm.LLMRateLimitError as exc:
         logger.warning("LLM rate limited: %s", exc)
         raise fail(429, "rate_limited", "The AI service is busy right now (rate limit reached). "
@@ -94,7 +127,25 @@ def answer_question(req: ChatRequest) -> ChatResponse:
         logger.error("LLM failed: %s", exc)
         raise fail(502, "llm_unavailable", "The AI service didn't respond properly. Please try again in a moment.")
 
-    return ChatAnswer(
+    yield {"type": "result", "data": ChatAnswer(
         explanation=explanation, sql=plan.sql, chart=check_chart(plan.chart, columns, rows),
         columns=columns, rows=rows, row_count=len(rows), truncated=truncated,
-    )
+    )}
+
+
+def answer_question(req: ChatRequest) -> ChatResponse:
+    """One-shot version: returns the final answer (or raises an HTTP error)."""
+    for event in answer_events(req):
+        if event["type"] == "error":
+            raise fail(event["status"], event["code"], event["message"])
+        if event["type"] == "result":
+            return event["data"]
+    raise fail(502, "llm_unavailable", "No answer was produced. Please try again.")
+
+
+def stream_answer(req: ChatRequest) -> Iterator[str]:
+    """Newline-delimited JSON: {"type":"step",...} lines, then one {"type":"result"} or {"type":"error"}."""
+    for event in answer_events(req):
+        if event["type"] == "result":
+            event = {"type": "result", "data": event["data"].model_dump(mode="json")}
+        yield json.dumps(event) + "\n"

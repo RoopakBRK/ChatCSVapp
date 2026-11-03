@@ -4,11 +4,13 @@
                     clarifying question)
   explain_result()  question + the rows the SQL actually returned -> a short written answer
 
-Both calls share one retry loop: a 30 s timeout, and up to 3 retries on connection errors,
-timeouts, rate limits, 5xx responses and unparseable / invalid output.
+Both calls share one retry loop. Each call has its own timeout and at most one retry (connection
+errors, timeouts, rate limits, 5xx responses, unparseable / invalid output), and a caller can pass a
+`deadline` that caps the total time for a whole question across all calls.
 """
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -22,10 +24,10 @@ from schemas.llm import LLMResponse
 logger = logging.getLogger(__name__)
 
 MODEL = "openai/gpt-oss-20b"
-TIMEOUT_SECONDS = 30.0
-MAX_RETRIES = 3  # retries after the first attempt, so up to 4 calls in total
+TIMEOUT_SECONDS = 20.0  # per call; shortened further when a deadline is close
+MAX_RETRIES = 1  # one retry after the first attempt, so at most 2 calls
 BACKOFF_SECONDS = 1.0
-MAX_WAIT_SECONDS = 15.0  # longest we will wait between retries, even if Groq asks for more
+MAX_WAIT_SECONDS = 10.0  # longest we will wait between retries, even if Groq asks for more
 EXPLAIN_ROWS = 30  # rows of the result shown to the model when it writes the explanation
 
 T = TypeVar("T")
@@ -37,7 +39,7 @@ Each CSV is a table (names below). Use only these tables and columns; never inve
 Reply with ONE JSON object and nothing else, exactly this shape:
 {
   "sql": "<one read-only DuckDB SELECT query, or null>",
-  "chart": {"type": "bar|line|pie|none", "x": "<result column>", "y": "<numeric result column>", "title": "<short title>"},
+  "chart": {"type": "bar|line|pie|scatter|none", "x": "<result column>", "y": "<numeric result column>", "title": "<short title>"},
   "needs_clarification": true or false,
   "question": "<question for the user, or null>"
 }
@@ -51,8 +53,13 @@ SQL rules:
 - Match text filters to the exact values listed in braces when a column has them.
 - "Latest", "last year" or "recent" refer to the data's own date range (shown in brackets), not today's date.
 
+Questions about the data itself (which columns exist, their types, how many rows) are answered with SQL too:
+use information_schema.columns (table_name, column_name, data_type) or COUNT(*). Only leave sql null when
+you ask for clarification.
+
 Chart rules:
 - bar: compare categories. line: a trend over time (x is a date or month, sorted ascending). pie: shares of a whole, at most 8 slices.
+- scatter: the relationship between two numeric columns (both x and y numeric).
 - none: a single number, a plain list of rows, or anything that does not chart well. Then set x, y and title to null.
 - x and y must be column names (or aliases) of the SQL result, and y must be numeric.
 
@@ -65,12 +72,17 @@ Data:
 
 EXPLAIN_PROMPT = """You explain query results to a non-technical user.
 Write 1 to 3 plain sentences that directly answer the question, using ONLY the numbers and names in the rows provided.
-Do not invent values, do not mention SQL, and do not repeat the whole table. If the result has no rows, say that nothing matched.
+Do not invent values, do not mention SQL, and do not repeat the whole table.
+Round numbers for reading: at most 2 decimals, with thousands separators (510.99, 3,737,818.32). If the result has no rows, say that nothing matched.
 If the rows are only part of the result (see "truncated"), say so briefly. Reply with the text only."""
 
 
 class LLMError(Exception):
     """The model could not produce a usable response after all retries."""
+
+
+class LLMTimeoutError(LLMError):
+    """The deadline for the whole question ran out."""
 
 
 class LLMRateLimitError(LLMError):
@@ -79,6 +91,12 @@ class LLMRateLimitError(LLMError):
 
 class LLMConfigError(LLMError):
     """The Groq client could not be created (usually a missing GROQ_API_KEY)."""
+
+
+def is_configured() -> bool:
+    """Whether a Groq API key is available. Never returns or logs the key itself."""
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    return bool(os.getenv("GROQ_API_KEY", "").strip())
 
 
 def _client() -> Groq:
@@ -157,21 +175,38 @@ def _complete(
     json_mode: bool,
     reasoning_effort: str | None = None,
     max_tokens: int = 2048,
+    deadline: float | None = None,  # time.monotonic() value after which we give up
 ) -> T:
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES + 1):
+        timeout = TIMEOUT_SECONDS
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise LLMTimeoutError("Ran out of time before the AI service answered")
+            timeout = min(timeout, remaining)
         try:
             kwargs: dict[str, Any] = dict(
-                model=MODEL, messages=messages, temperature=0, max_completion_tokens=max_tokens)
+                model=MODEL, messages=messages, temperature=0, max_completion_tokens=max_tokens, timeout=timeout)
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             if reasoning_effort:
                 kwargs["reasoning_effort"] = reasoning_effort
             completion = client.chat.completions.create(**kwargs)
-            return parse(completion.choices[0].message.content or "")
-        except ValueError as exc:  # bad JSON, failed pydantic validation, empty text
-            last_error = exc
-            logger.warning("LLM output invalid (attempt %d): %s", attempt + 1, exc)
+            content = completion.choices[0].message.content or ""
+            try:
+                return parse(content)
+            except ValueError as exc:  # bad JSON, failed pydantic validation, empty text
+                last_error = exc
+                logger.warning("LLM output invalid (attempt %d): %s", attempt + 1, exc)
+                # Asking again with the same prompt would just repeat the mistake, so say what was wrong.
+                problem = str(exc).strip().splitlines()[-2:] if json_mode else ["it was empty"]
+                messages = messages + [
+                    {"role": "assistant", "content": content or "(empty reply)"},
+                    {"role": "user", "content": "That reply was not valid: " + " ".join(p.strip() for p in problem)
+                     + (". Reply again with ONE valid JSON object in the required format." if json_mode
+                        else ". Reply with the answer text only.")},
+                ]
         except Exception as exc:
             if not _is_retryable(exc):
                 raise LLMError(f"Groq request failed: {exc}") from exc
@@ -179,7 +214,10 @@ def _complete(
             logger.warning("Groq call failed (attempt %d): %s", attempt + 1, exc)
 
         if attempt < MAX_RETRIES:
-            time.sleep(min(MAX_WAIT_SECONDS, max(BACKOFF_SECONDS * 2**attempt, _retry_after(last_error))))
+            wait = min(MAX_WAIT_SECONDS, max(BACKOFF_SECONDS * 2**attempt, _retry_after(last_error)))
+            if deadline is not None and time.monotonic() + wait >= deadline:
+                raise LLMTimeoutError("Ran out of time before the AI service answered")
+            time.sleep(wait)
 
     if isinstance(last_error, RateLimitError):
         raise LLMRateLimitError(f"Rate limited after {MAX_RETRIES + 1} attempts: {last_error}")
@@ -193,6 +231,7 @@ def generate_plan(
     history: list[dict[str, str]] | None = None,
     feedback: list[dict[str, str]] | None = None,
     client: Groq | None = None,
+    deadline: float | None = None,
 ) -> LLMResponse:
     """Ask for SQL / chart / clarification. `feedback` carries a failed attempt back to the model."""
     client = client or _client()
@@ -201,7 +240,7 @@ def generate_plan(
     messages.append({"role": "user", "content": question})
     messages += feedback or []
     return _complete(
-        client, messages, lambda text: LLMResponse.model_validate(json.loads(text)), json_mode=True)
+        client, messages, lambda text: LLMResponse.model_validate(json.loads(text)), json_mode=True, deadline=deadline)
 
 
 def explain_result(
@@ -211,6 +250,7 @@ def explain_result(
     total_rows: int,
     truncated: bool,
     client: Groq | None = None,
+    deadline: float | None = None,
 ) -> str:
     """Write a short answer grounded in the rows that the query really returned."""
     client = client or _client()
@@ -233,4 +273,4 @@ def explain_result(
             raise ValueError("empty explanation")
         return text[:1200]
 
-    return _complete(client, messages, parse, json_mode=False, reasoning_effort="low", max_tokens=1024)
+    return _complete(client, messages, parse, json_mode=False, reasoning_effort="low", max_tokens=1024, deadline=deadline)

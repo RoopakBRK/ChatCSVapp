@@ -24,7 +24,7 @@ def validate_read_only_sql(sql: str) -> str:
 
 
 class ChartSpec(BaseModel):
-    type: Literal["bar", "line", "pie", "none"]
+    type: Literal["bar", "line", "pie", "scatter", "none"]
     x: str | None = Field(default=None, description="Result column for the x axis (or pie labels)")
     y: str | None = Field(default=None, description="Numeric result column for the y axis (or pie values)")
     title: str | None = None

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ChartKind } from "@/components/charts/chartKinds";
 import ChatHeader from "@/components/chat/ChatHeader";
 import ChatPanel from "@/components/chat/ChatPanel";
 import HistorySidebar from "@/components/chat/HistorySidebar";
@@ -10,15 +11,19 @@ import { useFiles } from "@/hooks/useFiles";
 import { useHistory } from "@/hooks/useHistory";
 import type { HistorySession } from "@/lib/history";
 
+type AnswerItem = Extract<ChatItem, { kind: "answer" }>;
+const latestAnswer = (items: ChatItem[]) => [...items].reverse().find((i): i is AnswerItem => i.kind === "answer");
+
 export default function ChatPage() {
   const history = useHistory();
   const files = useFiles();
   const chat = useChat(files.sessionId, history.append);
 
-  // The results panel is closed by default. It opens when a history chat is opened, or when
-  // files are added or a question is answered in the current chat.
+  // The results panel is closed by default. It opens when a history chat is opened, or when files
+  // are added or a question is answered in the current chat. Charts only ever appear in it.
   const [resultsOpen, setResultsOpen] = useState(false);
   const [focus, setFocus] = useState<{ id: string } | null>(null);
+  const [views, setViews] = useState<Record<string, ChartKind>>({}); // chart type picked per answer
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Once chat.md and the saved session are both known, show the chat the user was last in.
@@ -31,15 +36,21 @@ export default function ChatPage() {
     else reset();
   }, [history.ready, history.entries, files.ready, files.sessionId, load, reset]);
 
-  const answers = chat.items.filter((i): i is Extract<ChatItem, { kind: "answer" }> => i.kind === "answer");
+  const answers = chat.items.filter((i): i is AnswerItem => i.kind === "answer");
+  const focusOn = (id: string) => {
+    setResultsOpen(true);
+    setFocus({ id });
+  };
 
-  const openHistory = (s: HistorySession) => {
+  const openHistory = async (s: HistorySession) => {
     setDrawerOpen(false);
     if (s.id) files.openSession(s.id);
     else files.startNewSession();
-    chat.load(s.id, history.entries);
     setFocus(null);
     setResultsOpen(true);
+    const items = await chat.load(s.id, history.entries);
+    const last = items && latestAnswer(items);
+    if (last) setFocus({ id: last.id }); // show the chat's most recent result
   };
 
   const newChat = () => {
@@ -50,24 +61,20 @@ export default function ChatPage() {
     setResultsOpen(false);
   };
 
-  const handleFiles = async (picked: File[]) => {
-    const uploaded = await files.upload(picked);
-    if (uploaded) {
-      chat.notice(uploaded.note, uploaded.sessionId); // keeps "Uploaded: ..." in the chat and chat.md
-      setResultsOpen(true);
-    }
+  const afterUpload = (uploaded: { note: string; sessionId: string } | null) => {
+    if (!uploaded) return false;
+    chat.notice(uploaded.note, uploaded.sessionId); // keeps "Uploaded: ..." in the chat and chat.md
+    setResultsOpen(true);
+    return true;
   };
 
   const handleSend = async (text: string) => {
     const item = await chat.send(text);
-    if (item?.kind === "answer") {
-      setResultsOpen(true);
-      setFocus({ id: item.id });
-    }
+    if (item?.kind === "answer") focusOn(item.id);
   };
 
   return (
-    <div className="flex h-full gap-3 p-3 md:gap-4 md:p-4">
+    <div className="flex h-full gap-3 p-3 md:gap-2 md:p-4">
       <HistorySidebar
         sessions={history.sessions}
         activeId={files.sessionId}
@@ -78,41 +85,55 @@ export default function ChatPage() {
         onNewChat={newChat}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <main className="panel-main relative flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl">
         <ChatHeader
           resultsCount={files.files.length + answers.length}
           resultsOpen={resultsOpen}
-          onToggleResults={() => setResultsOpen((o) => !o)}
+          onToggleResults={() => {
+            if (!resultsOpen && !focus) {
+              const last = latestAnswer(chat.items);
+              if (last) setFocus({ id: last.id });
+            }
+            setResultsOpen(!resultsOpen);
+          }}
           onOpenHistory={() => setDrawerOpen(true)}
         />
-        <div className="flex min-h-0 flex-1 gap-4">
-          <main className="panel-main flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl">
-            <ChatPanel
-              items={chat.items}
-              loading={chat.loading}
-              restored={chat.loaded}
-              hasFiles={files.files.length > 0}
-              uploading={files.uploading}
-              uploadError={files.error}
-              onDismissError={files.dismissError}
-              onSend={handleSend}
-              onFiles={handleFiles}
-              onOpenResult={(id) => {
-                setResultsOpen(true);
-                setFocus({ id });
-              }}
-            />
-          </main>
-          <ResultsPanel
-            open={resultsOpen}
-            files={files.files}
-            relationships={files.relationships}
-            answers={answers}
-            focus={focus}
-            onClose={() => setResultsOpen(false)}
-          />
-        </div>
-      </div>
+        <ChatPanel
+          items={chat.items}
+          files={files.files}
+          starters={files.starters}
+          loading={chat.loading}
+          step={chat.step}
+          restored={chat.loaded}
+          uploading={files.uploading}
+          uploadError={files.error}
+          onDismissError={files.dismissError}
+          onSend={handleSend}
+          onStop={chat.stop}
+          onFiles={async (picked) => {
+            afterUpload(await files.upload(picked));
+          }}
+          onAddLink={async (url) => afterUpload(await files.uploadUrl(url))}
+          onOpenResult={focusOn}
+        />
+      </main>
+
+      <ResultsPanel
+        open={resultsOpen}
+        files={files.files}
+        relationships={files.relationships}
+        answers={answers}
+        focus={focus}
+        views={views}
+        onKind={(id, kind) => setViews((v) => ({ ...v, [id]: kind }))}
+        onFocus={(id) => setFocus({ id })}
+        onRemoveFile={async (name) => {
+          const sid = files.sessionId;
+          const note = await files.remove(name);
+          if (note && sid) chat.notice(note, sid);
+        }}
+        onClose={() => setResultsOpen(false)}
+      />
     </div>
   );
 }
