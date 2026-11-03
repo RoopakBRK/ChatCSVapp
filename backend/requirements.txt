@@ -3,7 +3,8 @@ pandas
 fastapi
 pydantic
 uvicorn
-sqlalchemy
-asyncpg
-alembic
-grok
+duckdb
+groq
+pytest
+python-multipart
+python-dotenv

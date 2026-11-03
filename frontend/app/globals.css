@@ -1,26 +1,107 @@
 @import "tailwindcss";
 
+/* Light only: mostly white, with soft blue and pink washes. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --foreground: #1f2347;
+  --muted: #6b7194;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-strong: #ffffff;
+  --border: rgba(99, 102, 241, 0.14);
+  --accent: #6366f1;
+  --grad-from: #38bdf8; /* sky */
+  --grad-to: #ec4899; /* pink */
 }
 
 @theme inline {
-  --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-glass: var(--glass);
+  --color-glass-strong: var(--glass-strong);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  background-color: #ffffff;
+  /* A light blue-to-pink sweep across the whole page, with deeper pools of colour in the corners. */
+  background-image:
+    radial-gradient(56rem 36rem at -6% -8%, rgba(125, 211, 252, 0.5), transparent 68%),
+    radial-gradient(50rem 34rem at 106% -4%, rgba(249, 168, 212, 0.5), transparent 68%),
+    radial-gradient(48rem 32rem at 104% 106%, rgba(186, 230, 253, 0.46), transparent 68%),
+    radial-gradient(44rem 30rem at -2% 104%, rgba(251, 207, 232, 0.44), transparent 68%),
+    linear-gradient(135deg, #eef8ff 0%, #ffffff 42%, #fff0f8 100%);
+  background-attachment: fixed;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Panels: still mostly white, each tinted with its own soft blue/pink gradient. */
+.glass,
+.panel-main,
+.panel-sidebar,
+.panel-results {
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 34px -14px rgba(99, 102, 241, 0.24);
+}
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.panel-main {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.9) 55%, rgba(255, 236, 247, 0.85) 100%);
+}
+.panel-sidebar {
+  background: linear-gradient(180deg, rgba(224, 242, 254, 0.92) 0%, rgba(255, 255, 255, 0.9) 48%, rgba(252, 231, 243, 0.92) 100%);
+}
+.panel-results {
+  background: linear-gradient(200deg, rgba(252, 231, 243, 0.9) 0%, rgba(255, 255, 255, 0.94) 42%, rgba(224, 242, 254, 0.9) 100%);
+}
+
+.bg-gradient-brand {
+  background-image: linear-gradient(120deg, var(--grad-from), var(--grad-to));
+}
+
+.text-gradient-brand {
+  background-image: linear-gradient(120deg, #0ea5e9, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(129, 140, 248, 0.4) transparent;
+}
+
+/* Typing indicator */
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 2px;
+  border-radius: 9999px;
+  background-image: linear-gradient(120deg, var(--grad-from), var(--grad-to));
+  animation: bounce-dot 1.2s infinite ease-in-out;
+}
+.dot:nth-child(2) { animation-delay: 0.15s; }
+.dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* Results panel slides in from the right */
+@keyframes slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.slide-in { animation: slide-in 0.25s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot, .slide-in { animation: none; }
 }

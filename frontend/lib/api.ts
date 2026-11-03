@@ -1,0 +1,224 @@
+/**
+ * Every network call the app makes lives in this file, together with types that mirror the
+ * backend's pydantic models (backend/src/schemas/*.py).
+ */
+
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
+/* ───────────── Types: files ───────────── */
+
+export type ColumnInfo = {
+  name: string;
+  original_name: string;
+  type: string;
+  missing: number;
+  missing_pct: number;
+  distinct_values: string[] | null;
+  min: string | null;
+  max: string | null;
+};
+
+export type CleaningStep = {
+  action: string;
+  column: string | null;
+  count: number;
+  detail: string;
+  changes_data: boolean;
+};
+
+export type OutlierFlag = {
+  column: string;
+  count: number;
+  lower_fence: number;
+  upper_fence: number;
+  examples: number[];
+};
+
+export type CellValue = string | number | boolean | null;
+
+export type FileSummary = {
+  file_name: string;
+  table_name: string;
+  size: number;
+  rows_read: number;
+  row_count: number;
+  column_count: number;
+  columns: ColumnInfo[];
+  missing_total: number;
+  sample_rows: Record<string, CellValue>[];
+  cleaning_steps: CleaningStep[];
+  outliers: OutlierFlag[];
+};
+
+export type Relationship = {
+  from_table: string;
+  from_column: string;
+  to_table: string;
+  to_column: string;
+  cardinality: "many_to_one" | "one_to_one";
+  match_pct: number;
+  unmatched_values: number;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  type_mismatch: boolean;
+  join: string;
+};
+
+export type RejectedFile = { name: string; reason: string };
+
+export type SessionFiles = {
+  session_id: string;
+  files: FileSummary[];
+  relationships: Relationship[];
+};
+
+export type UploadResponse = SessionFiles & {
+  uploaded: string[];
+  rejected: RejectedFile[];
+};
+
+/* ───────────── Types: chat ───────────── */
+
+export type ChartType = "bar" | "line" | "pie";
+export type ChartSpec = { type: ChartType; x: string; y: string; title: string };
+
+export type HistoryTurn = { role: "user" | "assistant"; content: string };
+export type ChatRequest = { message: string; session_id: string; history: HistoryTurn[] };
+
+export type ChatAnswer = {
+  type: "answer";
+  explanation: string;
+  sql: string;
+  chart: ChartSpec | null;
+  columns: string[];
+  rows: CellValue[][];
+  row_count: number;
+  truncated: boolean;
+};
+export type ChatClarification = { type: "clarification"; question: string };
+export type ChatResponse = ChatAnswer | ChatClarification;
+
+export type QueryResult = { columns: string[]; rows: CellValue[][]; row_count: number; truncated: boolean };
+
+/** What chat.md keeps about an answer so it can be redrawn later (the rows are re-queried, not stored). */
+export type SavedResult = { question: string; sql: string; chart: ChartSpec | null };
+
+/** One saved message of the chat.md log (served by the Next route handler, not the Python backend). */
+export type ChatLogEntry = {
+  role: "user" | "assistant" | "system";
+  content: string;
+  ts: string;
+  session: string | null; // which upload session (chat) it belongs to
+  result?: SavedResult;
+};
+
+/* ───────────── Errors ───────────── */
+
+export type ApiErrorKind = "network" | "client" | "server";
+
+/** Always carries a message that is safe to show to the user as is. */
+export class ApiError extends Error {
+  constructor(
+    public kind: ApiErrorKind,
+    message: string,
+    public code?: string,
+  ) {
+    super(message);
+  }
+}
+
+export function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Something unexpected went wrong. Please try again.";
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+  const kind: ApiErrorKind = res.status >= 500 ? "server" : "client";
+
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const rejected = detail.rejected as RejectedFile[] | undefined;
+    if (rejected?.length) {
+      const reasons = rejected.map((r) => `${r.name}: ${r.reason}`).join("\n");
+      return new ApiError(kind, `We couldn't use ${rejected.length === 1 ? "that file" : "those files"}.\n${reasons}`, "rejected");
+    }
+    if (typeof detail.message === "string") return new ApiError(kind, detail.message, detail.code);
+  }
+  if (typeof detail === "string") {
+    if (res.status === 404) return new ApiError(kind, "This session has expired. Please upload your CSV files again.", "session_not_found");
+    return new ApiError(kind, detail);
+  }
+  if (res.status >= 500) return new ApiError(kind, "The server ran into a problem. Please try again in a moment.");
+  return new ApiError(kind, "That request wasn't accepted. Please check it and try again.");
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, init);
+  } catch {
+    throw new ApiError(
+      "network",
+      `I can't reach the server right now. Make sure the backend is running at ${API_URL}, then try again.`,
+      "network",
+    );
+  }
+  if (!res.ok) throw await toApiError(res);
+  return (await res.json()) as T;
+}
+
+/* ───────────── Backend calls ───────────── */
+
+export function uploadFiles(files: File[], sessionId: string | null): Promise<UploadResponse> {
+  const form = new FormData();
+  if (sessionId) form.append("session_id", sessionId);
+  files.forEach((f) => form.append("files", f));
+  return request<UploadResponse>("/files", { method: "POST", body: form });
+}
+
+/** Returns null when the backend no longer knows the session. */
+export async function getFiles(sessionId: string): Promise<SessionFiles | null> {
+  try {
+    return await request<SessionFiles>(`/files?session_id=${encodeURIComponent(sessionId)}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === "session_not_found") return null;
+    throw e;
+  }
+}
+
+export function sendChat(req: ChatRequest): Promise<ChatResponse> {
+  return request<ChatResponse>("/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+}
+
+/** Re-runs the SQL of an earlier answer against the session's tables. */
+export function runQuery(sessionId: string, sql: string): Promise<QueryResult> {
+  return request<QueryResult>("/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, sql }),
+  });
+}
+
+/* ───────────── chat.md log (same-origin Next route) ───────────── */
+
+export async function loadChatLog(): Promise<ChatLogEntry[]> {
+  try {
+    const res = await fetch("/api/chat-log");
+    return res.ok ? ((await res.json()) as { messages: ChatLogEntry[] }).messages : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Fire and forget: failing to save history must never get in the user's way. */
+export function appendChatLog(entry: ChatLogEntry): void {
+  fetch("/api/chat-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  }).catch(() => {});
+}

@@ -7,10 +7,26 @@ authors = [
     { name = "RoopakBRK", email = "roopak2804@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "duckdb",
+    "fastapi",
+    "groq",
+    "numpy",
+    "pandas",
+    "pydantic",
+    "python-dotenv",
+    "python-multipart",
+    "uvicorn",
+]
 
-[project.scripts]
-backend = "backend:main"
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv.build-backend]
+module-name = ["chatapp", "api", "schemas"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
