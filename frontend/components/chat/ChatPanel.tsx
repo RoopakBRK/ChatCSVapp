@@ -2,12 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import type { ChatItem } from "@/hooks/useChat";
+import type { FileProgress } from "@/hooks/useFiles";
 import type { ChatStep, FileSummary } from "@/lib/api";
 import { followUps } from "@/lib/followups";
 import Notice from "@/components/Notice";
 import DropTarget from "@/components/upload/DropTarget";
-import UploadZone from "@/components/upload/UploadZone";
+import UploadProgress from "@/components/upload/UploadProgress";
 import Composer from "./Composer";
+import EmptyState from "./EmptyState";
 import MessageBubble from "./MessageBubble";
 import ProgressSteps from "./ProgressSteps";
 import SuggestionChips from "./SuggestionChips";
@@ -16,6 +18,7 @@ type Props = {
   items: ChatItem[];
   files: FileSummary[];
   starters: string[];
+  progress: FileProgress[];
   loading: boolean;
   step: ChatStep | null;
   restored: boolean;
@@ -26,74 +29,61 @@ type Props = {
   onStop: () => void;
   onFiles: (files: File[]) => void;
   onAddLink: (url: string) => Promise<boolean>;
-  onOpenResult: (id: string) => void;
+  onSample: () => void;
 };
 
+/** The conversation, centred in a 720px column, with the composer underneath. */
 export default function ChatPanel(p: Props) {
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [p.items, p.loading, p.step]);
+  }, [p.items, p.loading, p.step, p.progress]);
 
   const hasFiles = p.files.length > 0;
   const last = p.items[p.items.length - 1];
-  const showStarters = hasFiles && p.starters.length > 0 && !p.loading && !p.items.some((i) => i.kind === "user");
+  const asked = p.items.some((i) => i.kind === "user");
+  const showStarters = hasFiles && p.starters.length > 0 && !p.loading && !asked;
   const lastAnswer = !p.loading && last?.kind === "answer" ? last : null;
+  const chips = lastAnswer ? followUps(lastAnswer.answer, p.files).map((f) => ({ text: f.label, onClick: () => p.onSend(f.text) })) : [];
 
   return (
     <DropTarget onFiles={p.onFiles}>
-      <div className="flex-1 overflow-y-auto px-4 pb-5 pt-16 md:px-6" aria-live="polite">
-        <div className="flex w-full flex-col items-stretch gap-4">
+      <div className="flex-1 overflow-y-auto" aria-live="polite">
+        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-4 px-4 py-6">
+          {p.restored && !hasFiles && p.progress.length === 0 && <EmptyState uploading={p.uploading} onFiles={p.onFiles} onSample={p.onSample} />}
+
           {p.items.map((item) => (
-            <MessageBubble key={item.id} item={item} onOpenResult={p.onOpenResult} />
+            <MessageBubble key={item.id} item={item} />
           ))}
+          <UploadProgress items={p.progress} />
           {p.loading && <ProgressSteps step={p.step} onStop={p.onStop} />}
 
           {showStarters && (
-            <SuggestionChips
-              label="Try asking"
-              chips={p.starters.map((text) => ({ text, onClick: () => p.onSend(text) }))}
-            />
-          )}
-          {lastAnswer && (
-            <SuggestionChips
-              label="Follow up"
-              chips={followUps(lastAnswer.answer, p.files).map((f) => ({
-                text: f.label,
-                onClick: () => p.onSend(f.text),
-              }))}
-            />
-          )}
-
-          {p.restored && !hasFiles && (
-            <div className="mx-auto mt-10 w-full max-w-2xl space-y-4 text-center">
-              <h2 className="text-2xl font-bold tracking-tight">
-                <span className="text-gradient-brand">Start by adding your CSV files</span>
-              </h2>
-              <UploadZone onFiles={p.onFiles} uploading={p.uploading} />
+            <div className="msg-in">
+              <SuggestionChips label="Try asking" chips={p.starters.slice(0, 4).map((text) => ({ text, onClick: () => p.onSend(text) }))} />
             </div>
-          )}
-          {p.restored && hasFiles && p.items.length === 0 && !showStarters && (
-            <p className="mt-16 text-center text-muted">Your files are ready. Ask a question about your tables.</p>
           )}
           <div ref={bottom} />
         </div>
       </div>
 
       {p.uploadError && (
-        <div className="w-full px-4 pb-2 md:px-6">
+        <div className="mx-auto w-full max-w-[720px] px-4 pb-2">
           <Notice tone="error" onDismiss={p.onDismissError}>
             {p.uploadError}
           </Notice>
         </div>
       )}
       <Composer
+        files={p.files}
+        followUps={chips}
+        loading={p.loading}
+        uploading={p.uploading}
+        placeholder={hasFiles ? "Ask about your data… (type @ for a table)" : "Add CSV files with + to begin"}
         onSend={p.onSend}
+        onStop={p.onStop}
         onAddFiles={p.onFiles}
         onAddLink={p.onAddLink}
-        uploading={p.uploading}
-        disabled={!hasFiles || p.loading}
-        placeholder={hasFiles ? "Ask about your data…" : "Add CSV files with + to begin"}
       />
     </DropTarget>
   );

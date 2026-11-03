@@ -7,7 +7,7 @@ export default function CleaningSteps({ steps }: { steps: CleaningStep[] }) {
     <ul className="space-y-1">
       {ordered.map((s, i) => (
         <li key={i} className="text-muted">
-          <span className={s.changes_data ? "font-medium text-indigo-600" : "font-medium text-pink-600"}>
+          <span className={s.changes_data ? "font-medium text-teal" : "font-medium text-accent-ink"}>
             {s.changes_data ? "Changed" : "Flagged"}
           </span>
           {s.column && <span className="font-mono text-foreground"> {s.column}</span>}: {s.detail}

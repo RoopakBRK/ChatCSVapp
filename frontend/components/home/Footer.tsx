@@ -8,7 +8,7 @@ const COLUMNS = [
 
 export default function Footer() {
   return (
-    <footer className="mt-10 border-t border-white/70 bg-white/60 backdrop-blur">
+    <footer className="mt-10 border-t border-border bg-panel/60 backdrop-blur">
       <div className="mx-auto grid max-w-6xl gap-10 px-6 py-12 md:grid-cols-[2fr_1fr_1fr]">
         <div>
           <Logo />
@@ -22,9 +22,9 @@ export default function Footer() {
               {c.links.map((l) => (
                 <li key={l.label}>
                   {l.href.startsWith("/") ? (
-                    <Link href={l.href} className="text-sm text-muted hover:text-pink-600">{l.label}</Link>
+                    <Link href={l.href} className="text-sm text-muted hover:text-accent-ink">{l.label}</Link>
                   ) : (
-                    <a href={l.href} className="text-sm text-muted hover:text-pink-600">{l.label}</a>
+                    <a href={l.href} className="text-sm text-muted hover:text-accent-ink">{l.label}</a>
                   )}
                 </li>
               ))}
@@ -32,7 +32,7 @@ export default function Footer() {
           </div>
         ))}
       </div>
-      <p className="border-t border-white/70 py-5 text-center text-xs text-muted">© 2026 CSVChat</p>
+      <p className="border-t border-border py-5 text-center text-xs text-muted">© 2026 CSVChat</p>
     </footer>
   );
 }

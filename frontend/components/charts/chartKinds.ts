@@ -1,16 +1,16 @@
 import type { ChartType } from "@/lib/api";
 import type { FigureContext } from "./figureContext";
 import type { Figure } from "./plotly/loadPlotly";
-import { area3dFigure, bar3dFigure } from "./figures3d";
+import type { ChartTheme } from "./plotly/theme";
+import { area3dFigure } from "./figures3d";
 import {
   barFigure, boxFigure, funnelFigure, histogramFigure, lineFigure, pieFigure, radarFigure, scatterFigure, treemapFigure,
 } from "./figures2d";
 
 export type ChartKind =
-  | "bar3d" | "bar" | "line" | "area3d" | "pie" | "scatter" | "funnel" | "treemap" | "radar" | "histogram" | "box" | "table";
+  | "bar" | "line" | "area3d" | "pie" | "scatter" | "funnel" | "treemap" | "radar" | "histogram" | "box" | "table";
 
 export const KIND_LABEL: Record<ChartKind, string> = {
-  bar3d: "3D bars",
   bar: "Bars",
   line: "Line",
   area3d: "3D area",
@@ -24,8 +24,7 @@ export const KIND_LABEL: Record<ChartKind, string> = {
   table: "Table",
 };
 
-const BUILDERS: Record<Exclude<ChartKind, "table">, (c: FigureContext, height: number) => Figure> = {
-  bar3d: bar3dFigure,
+const BUILDERS: Record<Exclude<ChartKind, "table">, (c: FigureContext, height: number, t: ChartTheme) => Figure> = {
   bar: barFigure,
   line: lineFigure,
   area3d: area3dFigure,
@@ -38,8 +37,8 @@ const BUILDERS: Record<Exclude<ChartKind, "table">, (c: FigureContext, height: n
   box: boxFigure,
 };
 
-export function buildFigure(kind: Exclude<ChartKind, "table">, c: FigureContext, height: number): Figure {
-  return BUILDERS[kind](c, height);
+export function buildFigure(kind: Exclude<ChartKind, "table">, c: FigureContext, height: number, t: ChartTheme): Figure {
+  return BUILDERS[kind](c, height, t);
 }
 
 /** Only the views that make sense for this data, best first. */
@@ -51,8 +50,8 @@ export function suitableKinds(c: FigureContext): ChartKind[] {
   const add = (k: ChartKind, ok = true) => ok && !kinds.includes(k) && kinds.push(k);
 
   if (c.xKind === "category") {
-    add("bar3d", n <= 20);
     add("bar");
+    add("line");
     add("pie", n >= 2 && n <= 12 && positive);
     add("treemap", n >= 3 && n <= 60 && positive);
     add("funnel", n >= 3 && n <= 15 && positive);
@@ -61,7 +60,6 @@ export function suitableKinds(c: FigureContext): ChartKind[] {
     add("line");
     add("area3d", n >= 2 && n <= 60);
     add("bar");
-    add("bar3d", n <= 20);
     add("scatter");
   } else {
     add("scatter");
@@ -74,12 +72,10 @@ export function suitableKinds(c: FigureContext): ChartKind[] {
   return kinds;
 }
 
-/** The first view: the model's suggestion, drawn with a bit of depth where that still reads well. */
+/** The first view: the model's suggestion (bars stay flat; 3D is only offered for areas over time). */
 export function defaultKind(type: ChartType, c: FigureContext): ChartKind {
   const fits = suitableKinds(c);
   const wanted: ChartKind =
-    type === "bar" || (type === "pie" && !fits.includes("pie"))
-      ? (fits.includes("bar3d") ? "bar3d" : "bar")
-      : type === "pie" ? "pie" : type === "scatter" ? "scatter" : "line";
+    type === "bar" || (type === "pie" && !fits.includes("pie")) ? "bar" : type === "pie" ? "pie" : type === "scatter" ? "scatter" : "line";
   return fits.includes(wanted) ? wanted : fits[0];
 }

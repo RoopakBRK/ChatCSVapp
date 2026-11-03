@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { CONFIG } from "./theme";
 import { loadPlotly, type Figure } from "./loadPlotly";
 
-/** Draws a Plotly figure, follows its container's size, and frees the chart (and any WebGL context) on unmount. */
+/** Draws a Plotly figure (fading in), follows its container's size, and frees it on unmount. */
 export default function PlotlyChart({ figure, height }: { figure: Figure; height: number }) {
   const el = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -13,6 +13,8 @@ export default function PlotlyChart({ figure, height }: { figure: Figure; height
     const node = el.current;
     if (!node) return;
     let alive = true;
+    // The entrance animation is CSS (.chart-in on the wrapper): Plotly's own data transitions broke
+    // on gradient-filled lines, leaving points stuck at zero.
     loadPlotly()
       .then((Plotly) => Plotly.react(node, figure.data, figure.layout, CONFIG))
       .then(() => alive && setState("ready"))
@@ -40,13 +42,11 @@ export default function PlotlyChart({ figure, height }: { figure: Figure; height
   }, []);
 
   return (
-    <div className="relative" style={{ height }}>
+    <div className="chart-in relative" style={{ height }}>
       <div ref={el} className="h-full w-full" />
-      {state === "loading" && (
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted">Drawing chart…</div>
-      )}
+      {state === "loading" && <div className="absolute inset-0 flex items-center justify-center text-xs text-muted">Drawing chart…</div>}
       {state === "error" && (
-        <div role="alert" className="absolute inset-0 flex items-center justify-center text-xs text-rose-700">
+        <div role="alert" className="absolute inset-0 flex items-center justify-center text-xs text-error-ink">
           The chart could not be drawn. The data is still in the table.
         </div>
       )}

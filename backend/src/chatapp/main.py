@@ -10,7 +10,7 @@ from api.route import files as files_route
 from api.route import health as health_route
 from api.route import query as query_route
 from schemas.chat import ChatRequest, ChatResponse, QueryRequest, QueryResult
-from schemas.files import SessionFiles, UploadResponse, UrlUploadRequest
+from schemas.files import SampleRequest, SessionFiles, UploadResponse, UrlUploadRequest
 
 app = FastAPI(title="ChatAPP")
 
@@ -52,6 +52,18 @@ def upload_from_url(req: UrlUploadRequest):
     return files_route.upload_from_url(req)
 
 
+@app.post("/files/sample")
+def load_sample(req: SampleRequest):
+    """Load the bundled "Online Shop 2024" CSVs. Streams newline-delimited JSON:
+    {"type":"start"}, then {"type":"file","name","stage":"reading|cleaning|ready|error"} per file,
+    then {"type":"result","data":UploadResponse} (or {"type":"error"})."""
+    return StreamingResponse(
+        files_route.stream_sample(req.session_id),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.delete("/files/{name}", response_model=SessionFiles, responses={400: {}, 404: {}})
 def delete_file(name: str, session_id: str = Query(...)):
     """Remove an uploaded file: its table, its CSV on disk, and any links to other tables."""
@@ -73,7 +85,7 @@ def chat(req: ChatRequest):
 @app.post("/chat/stream")
 def chat_stream(req: ChatRequest):
     """Same as /chat, but streams progress as newline-delimited JSON:
-    {"type":"step","step":"understanding|running|writing"} ... then {"type":"result","data":...} or {"type":"error",...}."""
+    {"type":"step","step":"reading|querying|running|explaining"} ... then {"type":"result","data":...} or {"type":"error",...}."""
     return StreamingResponse(
         chat_route.stream_answer(req),
         media_type="application/x-ndjson",

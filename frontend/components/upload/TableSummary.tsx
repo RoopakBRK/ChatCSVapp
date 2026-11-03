@@ -8,7 +8,7 @@ import ColumnList from "./ColumnList";
 import SampleTable from "./SampleTable";
 
 const Heading = ({ children }: { children: React.ReactNode }) => (
-  <h3 className="mb-1 font-semibold uppercase tracking-wide text-muted">{children}</h3>
+  <h3 className="font-sans mb-1 font-semibold uppercase tracking-wide text-muted">{children}</h3>
 );
 
 export default function TableSummary({ file, onRemove }: { file: FileSummary; onRemove: () => Promise<void> }) {
@@ -19,7 +19,7 @@ export default function TableSummary({ file, onRemove }: { file: FileSummary; on
   const changes = file.cleaning_steps.filter((s) => s.changes_data).length;
 
   return (
-    <li className="depth rounded-xl border border-border bg-white text-sm">
+    <li className="card rounded-xl text-sm">
       <div className="flex items-start">
       <button
         onClick={() => setOpen((o) => !o)}
@@ -31,10 +31,10 @@ export default function TableSummary({ file, onRemove }: { file: FileSummary; on
             {file.table_name}
           </span>
           <span className="block text-xs text-muted">
-            {formatCount(file.row_count)} rows · {file.column_count} columns
+            <span className="font-mono">{formatCount(file.row_count)}</span> rows · <span className="font-mono">{file.column_count}</span> columns
             {file.missing_total > 0 && ` · ${formatCount(file.missing_total)} missing`}
           </span>
-          <span className="mt-0.5 block text-xs text-indigo-600">{cleaningHeadline(file.cleaning_steps)}</span>
+          <span className="mt-0.5 block text-xs text-teal">{cleaningHeadline(file.cleaning_steps)}</span>
         </span>
         <span className="mt-1 text-xs text-muted">{open ? "▾" : "▸"}</span>
       </button>
@@ -42,7 +42,7 @@ export default function TableSummary({ file, onRemove }: { file: FileSummary; on
         onClick={() => setConfirming(true)}
         aria-label={`Remove ${file.file_name}`}
         title="Remove this file"
-        className="m-1.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-rose-50 hover:text-rose-600"
+        className="m-1.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-error-soft hover:text-error-ink"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
@@ -51,12 +51,12 @@ export default function TableSummary({ file, onRemove }: { file: FileSummary; on
       </div>
 
       {confirming && (
-        <div role="alertdialog" aria-label="Confirm removal" className="mx-3 mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-900">
+        <div role="alertdialog" aria-label="Confirm removal" className="mx-3 mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-error-soft px-3 py-2 text-xs text-error-ink">
           <span>
             Remove <b>{file.file_name}</b>? Its table and the CSV are deleted from this chat.
           </span>
           <span className="flex gap-1.5">
-            <button onClick={() => setConfirming(false)} className="rounded-full px-2.5 py-1 font-semibold hover:bg-white">
+            <button onClick={() => setConfirming(false)} className="rounded-full px-2.5 py-1 font-semibold hover:bg-card">
               Cancel
             </button>
             <button
@@ -67,7 +67,7 @@ export default function TableSummary({ file, onRemove }: { file: FileSummary; on
                 setRemoving(false);
                 setConfirming(false);
               }}
-              className="rounded-full bg-rose-600 px-3 py-1 font-semibold text-white disabled:opacity-50"
+              className="rounded-full bg-error px-3 py-1 font-semibold text-panel disabled:opacity-50"
             >
               {removing ? "Removing…" : "Remove"}
             </button>

@@ -38,8 +38,8 @@ export default function Features() {
     <Section id="features" eyebrow="Features" title="Built to be trusted, not just clever">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f) => (
-          <article key={f.title} className="depth rounded-2xl border border-border bg-white p-6">
-            <span className="bg-gradient-brand flex h-10 w-10 items-center justify-center rounded-xl text-white" aria-hidden>
+          <article key={f.title} className="depth rounded-2xl border border-border bg-card p-6">
+            <span className="btn-accent flex h-10 w-10 items-center justify-center rounded-xl" aria-hidden>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d={f.icon} />
               </svg>

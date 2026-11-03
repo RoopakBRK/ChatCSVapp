@@ -5,7 +5,7 @@ import { useState } from "react";
 export default function Collapsible({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-border bg-glass-strong">
+    <div className="rounded-xl border border-border bg-panel/60">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}

@@ -13,6 +13,12 @@ def _words(name: str) -> str:
     return re.sub(r"^t_(?=\d)", "", name).replace("_", " ")
 
 
+def _singular(table: str) -> str:
+    if table.endswith("ies"):
+        return table[:-3] + "y"
+    return table[:-1] if table.endswith("s") else table
+
+
 def _measures(f: FileSummary) -> list[ColumnInfo]:
     """Numeric columns worth summing or averaging (not ids, not constants)."""
     return [
@@ -44,8 +50,10 @@ def starter_questions(files: list[FileSummary], relationships: list[Relationship
     for r in relationships:
         child, parent = by_name.get(r.from_table), by_name.get(r.to_table)
         if r.cardinality == "many_to_one" and r.confidence != "low" and child and parent:
-            links.append((child.row_count, f"Which {_words(r.to_table)} have the most {_words(r.from_table)}?"))
-    candidates.append([q for _, q in sorted(links, reverse=True)])
+            # Prefer a link into the table that owns the key (orders.order_id), not one that merely shares it.
+            owns_key = r.to_column in ("id", f"{_singular(r.to_table)}_id")
+            links.append((owns_key, child.row_count, f"Which {_words(r.to_table)} have the most {_words(r.from_table)}?"))
+    candidates.append([q for *_, q in sorted(links, reverse=True)])
 
     # 2. A trend over time.
     trends = []
@@ -80,9 +88,22 @@ def starter_questions(files: list[FileSummary], relationships: list[Relationship
         else [f"Give me an overview of {_words(files[0].table_name)}."] if files else []
     )
 
+    # 6. Fill-ups built straight from the columns, so there are always enough to choose from.
+    fill = []
+    for f in sorted(files, key=lambda f: -f.row_count):
+        measures, cats = _measures(f), _categories(f)
+        if measures:
+            fill.append(f"Show the top 5 {_words(f.table_name)} by {_words(measures[0].name)}.")
+            fill.append(f"What is the average {_words(measures[0].name)} in {_words(f.table_name)}?")
+            if len(measures) > 1:
+                fill.append(f"What is the total {_words(measures[1].name)} in {_words(f.table_name)}?")
+        if cats and measures:
+            fill.append(f"What is the average {_words(measures[0].name)} per {_words(cats[0].name)}?")
+    candidates.append(fill)
+
     # Take one from each kind first, then fill up with second choices.
     picked: list[str] = []
-    for depth in range(3):
+    for depth in range(6):
         for group in candidates:
             if depth < len(group) and group[depth] not in picked and len(picked) < MAX_STARTERS:
                 picked.append(group[depth])

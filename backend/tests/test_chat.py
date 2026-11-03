@@ -173,7 +173,7 @@ def test_stream_sends_steps_then_result(setup, monkeypatch):
     r = client.post("/chat/stream", json={"message": "who spent most?", "session_id": sid, "history": []})
     events = [json.loads(line) for line in r.text.splitlines()]
     assert r.headers["content-type"].startswith("application/x-ndjson")
-    assert [e["step"] for e in events if e["type"] == "step"] == ["understanding", "running", "writing"]
+    assert [e["step"] for e in events if e["type"] == "step"] == ["reading", "querying", "running", "explaining"]
     assert events[-1]["type"] == "result" and events[-1]["data"]["type"] == "answer"
     assert events[-1]["data"]["rows"][0][0] == "bob"
 

@@ -60,7 +60,7 @@ def test_bad_reupload_keeps_good_file(client):
 
 def test_upload_and_get_include_starter_questions(client):
     body = client.post("/files", files=[csv("notes.csv", "amount\n5\n7\n")]).json()
-    assert body["starter_questions"] == ["Give me an overview of notes."]
+    assert body["starter_questions"][0] == "Give me an overview of notes."
     assert client.get("/files", params={"session_id": body["session_id"]}).json()["starter_questions"] == body["starter_questions"]
 
 
@@ -117,3 +117,33 @@ def test_health_reports_the_key_without_revealing_it(client, monkeypatch):
     assert body["groq_key_configured"] is True and "gsk_secret_value" not in str(body)
     monkeypatch.setenv("GROQ_API_KEY", "")
     assert client.get("/health").json()["groq_key_configured"] is False
+
+
+def test_sample_data_streams_each_file(client, tmp_path, monkeypatch):
+    import json
+    from api.route import files as files_route
+
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    (sample / "orders.csv").write_text("order_id,customer_id\n1,1\n2,1\n")
+    (sample / "customers.csv").write_text("customer_id,name\n1,a\n")
+    (sample / "broken.csv").write_text("a,b\n1,2,3\n")
+    monkeypatch.setattr(files_route, "SAMPLE_DIR", sample)
+
+    events = [json.loads(line) for line in client.post("/files/sample", json={}).text.splitlines()]
+    assert events[0]["type"] == "start" and events[0]["files"] == ["broken.csv", "customers.csv", "orders.csv"]
+    stages = [(e["name"], e["stage"]) for e in events if e["type"] == "file"]
+    assert ("orders.csv", "reading") in stages and ("orders.csv", "cleaning") in stages and ("orders.csv", "ready") in stages
+    assert ("broken.csv", "error") in stages
+    result = events[-1]
+    assert result["type"] == "result" and sorted(result["data"]["uploaded"]) == ["customers.csv", "orders.csv"]
+    assert [e["rows"] for e in events if e.get("stage") == "ready" and e["name"] == "orders.csv"] == [2]
+
+
+def test_sample_data_missing(client, tmp_path, monkeypatch):
+    import json
+    from api.route import files as files_route
+
+    monkeypatch.setattr(files_route, "SAMPLE_DIR", tmp_path / "nope")
+    events = [json.loads(l) for l in client.post("/files/sample", json={}).text.splitlines()]
+    assert events == [{"type": "error", "status": 404, "message": "The sample data isn't available on this server."}]

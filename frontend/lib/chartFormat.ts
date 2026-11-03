@@ -20,16 +20,29 @@ export function humanize(name: string): string {
 }
 
 const money = new Intl.NumberFormat(LOCALE, { style: "currency", currency: CURRENCY });
-const moneyCompact = new Intl.NumberFormat(LOCALE, { style: "currency", currency: CURRENCY, notation: "compact", maximumFractionDigits: 1 });
 const plain = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 });
-const plainCompact = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });
+
+/** Short numbers for axes and stats: 950, 12.4k, 3.8M, 1.2B (one decimal, trailing .0 dropped). */
+export function compactNumber(n: number, prefix = ""): string {
+  const units: [number, string][] = [[1e9, "B"], [1e6, "M"], [1e3, "k"]];
+  const a = Math.abs(n);
+  let text = String(Number(a.toFixed(2)));
+  for (let i = units.length - 1; i >= 0; i--) {
+    const [size, suffix] = units[i];
+    if (a < size) break;
+    const rounded = Number((a / size).toFixed(1));
+    // 999,999 rounds to 1000.0k: carry it up to the next unit ("1M") instead.
+    text = rounded >= 1000 && i > 0 ? `${Number((a / units[i - 1][0]).toFixed(1))}${units[i - 1][1]}` : `${rounded}${suffix}`;
+  }
+  return `${n < 0 ? "-" : ""}${prefix}${text}`;
+}
 
 /** A number for a given column: currency for money columns, thousands separators otherwise. */
-export function formatNumber(column: string, n: number, compact = false): string {
+export function formatNumber(column: string, n: number, short = false): string {
   if (!Number.isFinite(n)) return "";
   if (isPlainNumberColumn(column)) return String(n);
-  if (isMoneyColumn(column)) return (compact ? moneyCompact : money).format(n);
-  return (compact ? plainCompact : plain).format(n);
+  if (isMoneyColumn(column)) return short ? compactNumber(n, "$") : money.format(n);
+  return short ? compactNumber(n) : plain.format(n);
 }
 
 /** Text for a table cell. */
@@ -57,12 +70,13 @@ export function detectDateAxis(values: CellValue[]): DateAxis | null {
   return { granularity, multiYear: years.size > 1 };
 }
 
-/** "Nov 2024", "Nov 3", "2024"... `long` is for tooltips, where there is room for the full date. */
+/** "nov 2024", "nov 3", "2024"... `long` is for tooltips, where there is room for the full date. */
 export function formatDate(iso: string, axis: DateAxis, long = false): string {
   const m = ISO.exec(iso);
   if (!m) return iso;
   const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0));
-  const fmt = (o: Intl.DateTimeFormatOptions) => date.toLocaleString(LOCALE, o);
+  // Lower case on purpose: "nov 2024", "nov 3", "november 2024" in tooltips.
+  const fmt = (o: Intl.DateTimeFormatOptions) => date.toLocaleString(LOCALE, o).toLowerCase();
   switch (axis.granularity) {
     case "year":
       return fmt({ year: "numeric" });

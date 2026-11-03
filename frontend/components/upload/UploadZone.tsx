@@ -27,16 +27,22 @@ export default function UploadZone({ onFiles, uploading }: Props) {
           setDragging(false);
           onFiles(Array.from(e.dataTransfer.files));
         }}
-        className={`cursor-pointer rounded-2xl border-2 border-dashed px-4 py-10 text-center transition-colors ${
-          dragging ? "border-pink-400 bg-pink-50" : "border-sky-300 bg-white/60 hover:border-pink-400 hover:bg-white"
+        data-active={dragging}
+        className={`drop-glow cursor-pointer rounded-3xl border border-dashed px-6 py-12 text-center ${
+          dragging ? "border-accent bg-accent-soft" : "border-border-strong bg-panel/50"
         }`}
       >
+        <span className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-accent-soft text-accent-ink" aria-hidden>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 17v3h16v-3M12 3v12m0-12-4 4m4-4 4 4" />
+          </svg>
+        </span>
         {uploading ? (
           <p className="text-sm font-medium">Reading and cleaning your files…</p>
         ) : (
           <>
             <p className="text-sm font-medium">Drop CSV files here</p>
-            <p className="mt-1 text-xs text-muted">or click to choose several at once</p>
+            <p className="mt-1 text-xs text-muted">or click to choose several at once · up to 50 MB each</p>
           </>
         )}
       </div>

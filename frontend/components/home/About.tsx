@@ -16,8 +16,8 @@ export default function About() {
     >
       <div className="grid gap-4 md:grid-cols-3">
         {FACTS.map((f) => (
-          <div key={f.value} className="depth rounded-2xl border border-border bg-white p-6 text-center">
-            <p className="text-gradient-brand text-2xl font-bold">{f.value}</p>
+          <div key={f.value} className="depth rounded-2xl border border-border bg-card p-6 text-center">
+            <p className="text-gradient-accent text-2xl font-bold">{f.value}</p>
             <p className="mt-2 text-sm text-muted">{f.label}</p>
           </div>
         ))}

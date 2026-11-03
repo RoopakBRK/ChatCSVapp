@@ -7,7 +7,7 @@ export default function DataTable({ answer }: { answer: ChatAnswer }) {
     <>
       <div className="max-h-72 overflow-auto">
         <table className="w-full whitespace-nowrap text-xs">
-          <thead className="sticky top-0 bg-glass-strong">
+          <thead className="sticky top-0 bg-panel">
             <tr>
               {answer.columns.map((c) => (
                 <th key={c} className="px-2 py-1 text-left font-mono font-semibold">
@@ -20,7 +20,7 @@ export default function DataTable({ answer }: { answer: ChatAnswer }) {
             {answer.rows.map((row, i) => (
               <tr key={i} className="border-t border-border">
                 {row.map((cell, j) => (
-                  <td key={j} className={`px-2 py-1 ${typeof cell === "number" ? "text-right tabular-nums" : ""}`}>
+                  <td key={j} className={`px-2 py-1 ${typeof cell === "number" ? "text-right font-mono tabular-nums" : ""}`}>
                     {cell === null ? <span className="text-muted">null</span> : formatCell(answer.columns[j], cell)}
                   </td>
                 ))}

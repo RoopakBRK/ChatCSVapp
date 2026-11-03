@@ -144,6 +144,43 @@
   - Starter questions read "t 2014 apple stock".
 - **Verified in the browser:** front page, link upload (a real GitHub CSV), answer and chart split, file removal, the full-width layout with Results closed, and Settings.
 
+### 13. Sidebar open by default, no 3D bars, animated progress
+**You:** The chat session (history) sidebar should be open by default. Drop the 3D view of the bar graphs. Progress should read like understanding the question, then building the query, with a better Lottie-style animation (visualizing, building the query, and so on).
+
+**Claude:**
+- **Sidebar:** opens expanded on every visit. Collapsing lasts for that visit only; the dragged width is still remembered.
+- **Bars:** 3D bars removed; bar answers open as flat bars. The 3D area view for time series stays.
+- **Progress stages,** each tied to a real backend step (`/chat/stream`):
+  - Understanding the question: the model reads the question and the tables.
+  - Building the query: the SQL is checked to be read-only and run.
+  - Visualizing: the suggested chart is checked against the result.
+  - Writing the answer.
+- **Animations:** each stage has its own animated scene (a magnifier reading text, SQL blocks snapping into an editor with a turning gear, bars rising under a line that draws itself, a pen filling a speech bubble). Pure SVG and CSS, no library, and still when reduced motion is requested. A real Lottie player would need a new package and animation files, so that is left as a question for the user.
+- **Explanations:** an empty result now says what was looked for ("No column appears in all the CSV files.") instead of just "Nothing matched".
+- **Note:** the user's own `next dev` server was serving a stale `globals.css` (missing this and last turn's CSS). The production build has the rules; restarting the dev server picks them up.
+- **Verified:** animations checked running (sampled transforms over a full cycle), sidebar opens at its saved width (288 px), 89 backend tests, lint, types and build.
+
+### 14. /chat redesign: tokens, light/dark, canvas, shortcuts, voice
+**You:** Redesign /chat with CSS variables instead of hard-coded colours. Dark mode #0b1020 / #121a2e / #1a2440, borders #ffffff14, text #e8ecf5, muted #8b95b0, amber accent #f5b544 (hover #ffc861) with dark text, chart colours #2dd4bf #f5b544 #818cf8 #fb7185 #38bdf8, success #34d399, error #f87171. Day mode #f7f4ee / #ffffff, text #1b2133, accent #b7791f, teal #0f766e. Follow the system theme with a remembered sun/moon toggle. Instrument Serif for headings, Geist for body, Geist Mono for numbers and SQL via next/font. Amber and teal glows at about 6%, faint grain, glass panels. Slim sidebar (new chat, past chats with "2h ago", table chips with row counts); conversation centred at 720px; results become a resizable "Canvas" sliding in from the right; header with serif title, table chips, theme toggle and canvas toggle; drawer and bottom sheet on mobile; shortcuts "/", Cmd+K, Esc; a voice button. Look only; ask before adding libraries.
+
+**Claude:**
+- **Tokens (`app/globals.css`):** every colour is a variable (`--bg`, `--panel`, `--card`, `--border`, `--text`, `--muted`, `--accent`, `--accent-hover`, `--on-accent`, `--teal`, `--success`, `--error`, `--chart-1..5`), exposed as Tailwind utilities (`bg-panel`, `text-muted`, `bg-accent-soft`...). Light-mode values that were not specified were derived: card #fdfbf7, muted #626a7d, accent hover #9c6518, darker chart colours for contrast on white. No colour literals remain in components.
+- **Theme:** follows `prefers-color-scheme`. The sun/moon toggle saves `csvchat.theme`, applied before first paint by a small script in the layout (no flash), and synced across tabs. Plotly charts read the tokens at runtime and redraw when the theme changes; PNG exports use the current theme.
+- **Fonts and texture:** Instrument Serif (headings), Geist (body) and Geist Mono (numbers, SQL, counts, chart ticks) through `next/font`. Amber and teal radial glows at 6%, an SVG grain, frosted glass panels with hairline borders.
+- **Layout:** slim, collapsible and resizable sidebar; conversation max 720px; Canvas (renamed from Results) slides in from the right and is resizable by dragging its left edge (width remembered); header with the serif chat title, table chips, theme toggle and canvas toggle. Mobile: the sidebar is a drawer and the canvas a bottom sheet.
+- **Shortcuts:** `/` focuses the input, Cmd/Ctrl+K starts a new chat, Esc closes the drawer or canvas (menus handle their own Esc first). Listed under the composer and in Settings.
+- **Voice:** a mic button using the browser's built-in Web Speech API (no library). It asks for microphone permission, shows interim words in the box for review before sending, and explains errors. It is disabled where unsupported (e.g. Firefox). In Chrome the audio is processed by Google's speech service.
+- **Libraries:** none added.
+- **Build-pipeline bugs found and fixed:**
+  - Writing `backdrop-filter` and its `-webkit-` form made the CSS optimiser keep only the prefixed one, so Chrome had no blur. The blur now goes through a variable.
+  - A `@layer components` block came out unlayered and overrode every Tailwind utility. Component classes are now `@utility` rules.
+- **Verified in the browser:** dark (system) and light, the toggle, the canvas with a chart in both themes, drag-resize (480 to 600px, saved), Esc, `/`, Cmd+K, and the mobile drawer and bottom sheet (in a 390px frame). Types, lint and build pass; 89 backend tests.
+
+### 15-16. Empty state, upload cards, answer cards, final pass (partly done)
+**You:** Empty state with sample data, per-file upload cards, 4 starter questions, charts in answer cards, big-number stats, answer actions, clarification/error styles, progress steps with a 20s note, word-by-word reveal, chart styling, @ table mentions, growing input, circle send/stop. Then: final pass for WCAG AA, amber focus rings, skeletons, toasts, consistent spacing/radius/shadow scales, mobile/tablet/desktop check, lint and typecheck; plus chattxt.txt with only the user's messages.
+
+**Claude:** All of the first list is built and was checked in the browser (on a separate test stack, because the user's dev server served a stale stylesheet). Final pass done so far: contrast audit and fixes (darker light-mode text variants for amber and red, lighter light hover amber, an amber focus ring with a dark edge), and one radius and shadow scale. Not done (usage limit): skeleton loaders, toasts, and the three-size layout check. chattxt.txt holds the user's 17 messages, numbered.
+
 ---
 
 ## App chat log
@@ -220,3 +257,91 @@ SELECT date_trunc('month', shipment_date) AS month, carrier, COUNT(*) AS shipmen
 ```
 
 <!-- result {"question":"Show this by month","sql":"SELECT date_trunc('month', shipment_date) AS month, carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY month, carrier ORDER BY month, carrier","chart":null} -->
+<!-- msg role=system ts=2026-11-03T16:05:49.291Z session=077cef4b847e4253a4faafc7d24f760c -->
+**System** · 2026-11-03T16:05:49.291Z
+
+Uploaded: suppliers.csv, shipments.csv, reviews.csv, payment.csv, products.csv, order_items.csv, orders.csv, customers.csv
+
+
+<!-- msg role=user ts=2026-11-03T16:06:09.120Z session=077cef4b847e4253a4faafc7d24f760c -->
+**You** · 2026-11-03T16:06:09.120Z
+
+what are the columns which are common in all these CSV files ?
+
+
+<!-- msg role=assistant ts=2026-11-03T16:06:11.989Z session=077cef4b847e4253a4faafc7d24f760c -->
+**Assistant** · 2026-11-03T16:06:11.989Z
+
+Nothing matched.
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8
+```
+
+<!-- result {"question":"what are the columns which are common in all these CSV files ?","sql":"SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8","chart":null} -->
+
+<!-- msg role=user ts=2026-11-03T16:06:17.094Z session=077cef4b847e4253a4faafc7d24f760c -->
+**You** · 2026-11-03T16:06:17.094Z
+
+Break this down by transaction status
+
+
+<!-- msg role=assistant ts=2026-11-03T16:06:18.682Z session=077cef4b847e4253a4faafc7d24f760c -->
+**Assistant** · 2026-11-03T16:06:18.682Z
+
+Pending: revenue 526,570.63, orders 1,500  
+Failed: revenue 541,406.89, orders 1,500  
+Completed: revenue 4,316,672.21, orders 12,000
+
+```sql
+SELECT transaction_status, SUM(amount) AS revenue, COUNT(DISTINCT order_id) AS order_count FROM payment GROUP BY transaction_status
+```
+
+<!-- result {"question":"Break this down by transaction status","sql":"SELECT transaction_status, SUM(amount) AS revenue, COUNT(DISTINCT order_id) AS order_count FROM payment GROUP BY transaction_status","chart":{"type":"bar","x":"transaction_status","y":"revenue","title":"Revenue by Transaction Status"}} -->
+
+<!-- msg role=user ts=2026-11-03T16:07:15.499Z session=077cef4b847e4253a4faafc7d24f760c -->
+**You** · 2026-11-03T16:07:15.499Z
+
+what are the columns which are common in all these CSV files?
+
+
+<!-- msg role=assistant ts=2026-11-03T16:07:17.342Z session=077cef4b847e4253a4faafc7d24f760c -->
+**Assistant** · 2026-11-03T16:07:17.342Z
+
+Nothing matched.
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8
+```
+
+<!-- result {"question":"what are the columns which are common in all these CSV files?","sql":"SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8","chart":null} -->
+
+<!-- msg role=user ts=2026-11-03T16:07:33.608Z session=077cef4b847e4253a4faafc7d24f760c -->
+**You** · 2026-11-03T16:07:33.608Z
+
+what are the columns in all these tables which are different ?
+
+
+<!-- msg role=assistant ts=2026-11-03T16:07:34.732Z session=077cef4b847e4253a4faafc7d24f760c -->
+**Assistant** · 2026-11-03T16:07:34.732Z
+
+Could you clarify what you mean by "different"? Do you want a list of columns that exist in every table but have different data types, or are you looking for columns that contain different values across the tables?
+
+
+<!-- msg role=user ts=2026-11-03T16:07:42.715Z session=077cef4b847e4253a4faafc7d24f760c -->
+**You** · 2026-11-03T16:07:42.715Z
+
+yes
+
+
+<!-- msg role=assistant ts=2026-11-03T16:07:45.711Z session=077cef4b847e4253a4faafc7d24f760c -->
+**Assistant** · 2026-11-03T16:07:45.711Z
+
+Nothing matched.
+
+```sql
+SELECT column_name FROM (SELECT column_name, COUNT(DISTINCT table_name) AS tbl_cnt, COUNT(DISTINCT data_type) AS type_cnt FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name) WHERE tbl_cnt = 8 AND type_cnt > 1
+```
+
+<!-- result {"question":"yes","sql":"SELECT column_name FROM (SELECT column_name, COUNT(DISTINCT table_name) AS tbl_cnt, COUNT(DISTINCT data_type) AS type_cnt FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name) WHERE tbl_cnt = 8 AND type_cnt \u003e 1","chart":null} -->
+

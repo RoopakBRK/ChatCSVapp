@@ -1,4 +1,7 @@
-from pathlib import PurePath
+import json
+import os
+from pathlib import Path, PurePath
+from typing import Iterator
 
 from fastapi import HTTPException, UploadFile
 
@@ -10,6 +13,9 @@ from chatapp.sessions import get_or_create_session, is_valid_session_id, session
 from schemas.files import RejectedFile, SessionFiles, UploadResponse, UrlUploadRequest
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
+
+# The "Online Shop 2024" sample shipped with the project (override with SAMPLE_DATA_DIR).
+SAMPLE_DIR = Path(os.getenv("SAMPLE_DATA_DIR") or Path(__file__).resolve().parents[4] / "innowhytetakehomeassignment" / "Online Shop 2024")
 
 
 def _store(db, target, name: str, content: bytes) -> RejectedFile | None:
@@ -114,3 +120,40 @@ def list_files(session_id: str) -> SessionFiles:
     if db is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return _session_files(session_id, db)
+
+
+def sample_events(session_id: str | None) -> Iterator[dict]:
+    """Load the sample CSVs into a session, reporting each file as it is read, cleaned and ready."""
+    if session_id is not None and not is_valid_session_id(session_id):
+        yield {"type": "error", "status": 400, "message": "That session isn't valid."}
+        return
+    csvs = sorted(SAMPLE_DIR.glob("*.csv")) if SAMPLE_DIR.is_dir() else []
+    if not csvs:
+        yield {"type": "error", "status": 404, "message": "The sample data isn't available on this server."}
+        return
+
+    sid = get_or_create_session(session_id)
+    db = get_session(sid)
+    target = session_dir(sid)
+    yield {"type": "start", "session_id": sid, "files": [p.name for p in csvs]}
+    uploaded: list[str] = []
+    rejected: list[RejectedFile] = []
+    for path in csvs:
+        yield {"type": "file", "name": path.name, "stage": "reading"}
+        content = path.read_bytes()
+        yield {"type": "file", "name": path.name, "stage": "cleaning"}
+        problem = _store(db, target, path.name, content)
+        if problem:
+            rejected.append(problem)
+            yield {"type": "file", "name": path.name, "stage": "error", "reason": problem.reason}
+        else:
+            uploaded.append(path.name)
+            yield {"type": "file", "name": path.name, "stage": "ready", "rows": db.files[path.name].row_count}
+    result = UploadResponse(**_session_files(sid, db).model_dump(), uploaded=uploaded, rejected=rejected)
+    yield {"type": "result", "data": result.model_dump(mode="json")}
+
+
+def stream_sample(session_id: str | None) -> Iterator[str]:
+    """Newline-delimited JSON version of sample_events, for a live progress display."""
+    for event in sample_events(session_id):
+        yield json.dumps(event) + "\n"

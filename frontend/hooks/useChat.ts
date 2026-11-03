@@ -4,12 +4,14 @@ import { useCallback, useRef, useState } from "react";
 import { ApiError, errorMessage, runQuery, sendChat } from "@/lib/api";
 import type { ChatAnswer, ChatLogEntry, ChatStep, HistoryTurn } from "@/lib/api";
 
+/** `fresh` marks items created in this visit (they animate in); restored history does not. */
+type Base = { id: string; fresh?: boolean };
 export type ChatItem =
-  | { id: string; kind: "user"; text: string }
-  | { id: string; kind: "answer"; question: string; answer: ChatAnswer }
-  | { id: string; kind: "clarification"; text: string }
-  | { id: string; kind: "text"; role: "assistant" | "system"; text: string } // restored history, notices
-  | { id: string; kind: "error"; text: string };
+  | (Base & { kind: "user"; text: string })
+  | (Base & { kind: "answer"; question: string; answer: ChatAnswer })
+  | (Base & { kind: "clarification"; text: string })
+  | (Base & { kind: "text"; role: "assistant" | "system"; text: string }) // restored history, notices
+  | (Base & { kind: "error"; text: string; retry?: string }); // retry: the question to ask again
 
 const HISTORY_TURNS = 8;
 const CLIENT_DEADLINE_MS = 65_000; // the backend gives up at 60 s; this is the browser-side backstop
@@ -73,7 +75,7 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
 
   const add = useCallback(
     (item: ChatItem, entry: Pick<ChatLogEntry, "role" | "content" | "result">, sid: string | null) => {
-      setItems((prev) => [...prev, item]);
+      setItems((prev) => [...prev, { ...item, fresh: true }]);
       save({ ...entry, session: sid, ts: new Date().toISOString() });
     },
     [save],
@@ -85,12 +87,12 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
   );
 
   const send = useCallback(
-    async (text: string): Promise<ChatItem | null> => {
+    async (text: string, again = false): Promise<ChatItem | null> => {
       if (!sessionId || loading) return null;
       const history = toHistory(items);
-      add({ id: newId(), kind: "user", text }, { role: "user", content: text }, sessionId);
+      if (!again) add({ id: newId(), kind: "user", text }, { role: "user", content: text }, sessionId);
       setLoading(true);
-      setStep("understanding");
+      setStep("reading");
       const abort = new AbortController();
       controller.current = abort;
       const timer = setTimeout(() => abort.abort(new DOMException("Timed out", "TimeoutError")), CLIENT_DEADLINE_MS);
@@ -121,7 +123,7 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
           return null;
         }
         const message = errorMessage(e);
-        add({ id: newId(), kind: "error", text: message }, { role: "system", content: message }, sessionId);
+        add({ id: newId(), kind: "error", text: message, retry: text }, { role: "system", content: message }, sessionId);
         return null;
       } finally {
         clearTimeout(timer);
@@ -133,8 +135,19 @@ export function useChat(sessionId: string | null, save: (entry: ChatLogEntry) =>
     [sessionId, loading, items, add],
   );
 
+  /** Ask a failed question again: the error card goes away and no second copy of the question is added. */
+  const retry = useCallback(
+    (errorId: string) => {
+      const failed = items.find((i) => i.id === errorId);
+      if (!failed || failed.kind !== "error" || !failed.retry) return Promise.resolve(null);
+      setItems((prev) => prev.filter((i) => i.id !== errorId));
+      return send(failed.retry, true);
+    },
+    [items, send],
+  );
+
   /** Stop waiting for the current answer. */
   const stop = useCallback(() => controller.current?.abort(), []);
 
-  return { items, loading, step, loaded, send, stop, notice, load, reset };
+  return { items, loading, step, loaded, send, retry, stop, notice, load, reset };
 }

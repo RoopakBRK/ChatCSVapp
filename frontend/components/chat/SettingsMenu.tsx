@@ -20,13 +20,18 @@ export default function SettingsMenu({ sessionId, onNewSession, compact = false 
   };
 
   return (
-    <div className="relative">
+    <div className="relative" onKeyDown={(e) => {
+      if (e.key === "Escape" && open) {
+        e.stopPropagation(); // close this menu only, not the canvas too
+        setOpen(false);
+      }
+    }}>
       <button
         onClick={toggle}
         aria-expanded={open}
         aria-label="Settings"
         title="Settings"
-        className={`flex items-center gap-2 rounded-full ${compact ? "h-10 w-10 justify-center" : "w-full px-4 py-2"} border border-border bg-white text-sm font-medium shadow-sm transition-colors hover:border-pink-300 hover:bg-pink-50`}
+        className={`btn-ghost flex items-center gap-2 rounded-full ${compact ? "h-9 w-9 justify-center" : "w-full px-4 py-2"} text-sm font-medium`}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="3" />
@@ -38,7 +43,7 @@ export default function SettingsMenu({ sessionId, onNewSession, compact = false 
       {open && (
         <>
           <button aria-label="Close settings" className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-12 left-0 z-50 w-72 space-y-3 rounded-2xl border border-border bg-white p-4 text-sm shadow-xl">
+          <div className="glass depth-2 absolute bottom-12 left-0 z-50 w-72 space-y-3 rounded-2xl p-4 text-sm">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Backend</p>
               <p className="break-all font-mono text-xs">{API_URL}</p>
@@ -48,7 +53,7 @@ export default function SettingsMenu({ sessionId, onNewSession, compact = false 
               <p className="flex items-center gap-1.5 text-xs">
                 <span
                   aria-hidden
-                  className={`h-2 w-2 rounded-full ${ai === "ready" ? "bg-emerald-500" : ai === "checking" ? "bg-slate-300" : "bg-rose-500"}`}
+                  className={`h-2 w-2 rounded-full ${ai === "ready" ? "bg-success" : ai === "checking" ? "bg-border-strong" : "bg-error"}`}
                 />
                 {{ checking: "Checking…", ready: "Ready (Groq key configured)", "no-key": "Not set up: GROQ_API_KEY is missing on the server", offline: "Backend unreachable" }[ai]}
               </p>
@@ -63,10 +68,18 @@ export default function SettingsMenu({ sessionId, onNewSession, compact = false 
                 setOpen(false);
               }}
               disabled={!sessionId}
-              className="w-full rounded-xl border border-border px-3 py-2 font-medium transition-colors hover:border-pink-300 hover:bg-pink-50 disabled:opacity-40"
+              className="btn-ghost w-full rounded-xl px-3 py-2 font-medium"
             >
               Start a new chat
             </button>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Keyboard shortcuts</p>
+              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                <dt><kbd className="font-mono">/</kbd></dt><dd className="text-muted">Focus the question box</dd>
+                <dt><kbd className="font-mono">⌘K</kbd> / <kbd className="font-mono">Ctrl K</kbd></dt><dd className="text-muted">New chat</dd>
+                <dt><kbd className="font-mono">Esc</kbd></dt><dd className="text-muted">Close the canvas</dd>
+              </dl>
+            </div>
             <p className="text-xs text-muted">A new chat starts with no files. Your earlier chats stay in History and in chat.md.</p>
           </div>
         </>

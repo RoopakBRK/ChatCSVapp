@@ -40,10 +40,10 @@ export default function Faq() {
     <Section id="faq" eyebrow="FAQ" title="Questions people ask">
       <div className="mx-auto max-w-3xl space-y-3">
         {FAQS.map((f) => (
-          <details key={f.q} className="depth group rounded-2xl border border-border bg-white px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+          <details key={f.q} className="depth group rounded-2xl border border-border bg-card px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold">
               {f.q}
-              <span className="text-pink-500 transition-transform group-open:rotate-45" aria-hidden>
+              <span className="text-accent-ink transition-transform group-open:rotate-45" aria-hidden>
                 +
               </span>
             </summary>

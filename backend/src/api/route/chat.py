@@ -66,6 +66,7 @@ def answer_events(req: ChatRequest) -> Iterator[dict]:
 def _answer(req: ChatRequest) -> Iterator[dict]:
     if not is_valid_session_id(req.session_id):
         raise fail(400, "invalid_session", "That session isn't valid. Please upload your files again.")
+    yield _step("reading")  # open the session's tables and describe them for the model
     db = get_session(req.session_id)
     if db is None:
         raise fail(404, "session_not_found", "This session has expired. Please upload your CSV files again.")
@@ -81,12 +82,13 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
 
     try:
         for attempt in range(SQL_ATTEMPTS):
-            yield _step("understanding")
+            yield _step("querying")  # the model reads the question and writes the SQL
             plan = llm.generate_plan(req.message, files, db.relationships, history, feedback, deadline=deadline)
             if plan.needs_clarification:
                 question = plan.question or "Could you tell me more about what you need?"
                 yield {"type": "result", "data": ChatClarification(question=question)}
                 return
+            # The SQL is written; it is checked (read-only, single statement) and run against the tables.
             yield _step("running")
             left = deadline - time.monotonic()
             if left <= 0:
@@ -108,7 +110,8 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
                        "or ask about columns that appear in your uploaded files.")
 
         columns, rows, truncated = result
-        yield _step("writing")
+        chart = check_chart(plan.chart, columns, rows)  # keep the suggested chart only if it fits the data
+        yield _step("explaining")
         try:
             explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated, deadline=deadline)
         except llm.LLMError:
@@ -128,7 +131,7 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
         raise fail(502, "llm_unavailable", "The AI service didn't respond properly. Please try again in a moment.")
 
     yield {"type": "result", "data": ChatAnswer(
-        explanation=explanation, sql=plan.sql, chart=check_chart(plan.chart, columns, rows),
+        explanation=explanation, sql=plan.sql, chart=chart,
         columns=columns, rows=rows, row_count=len(rows), truncated=truncated,
     )}
 

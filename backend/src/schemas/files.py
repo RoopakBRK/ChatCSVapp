@@ -84,3 +84,7 @@ class UploadResponse(SessionFiles):
 class UrlUploadRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
     session_id: str | None = None
+
+
+class SampleRequest(BaseModel):
+    session_id: str | None = None

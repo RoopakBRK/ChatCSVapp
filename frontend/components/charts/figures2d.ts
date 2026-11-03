@@ -1,58 +1,62 @@
 import type { Figure } from "./plotly/loadPlotly";
 import { valueTicks, type FigureContext } from "./figureContext";
-import { FONT, GRID, HOVERLABEL, INK, MUTED, PALETTE, COLORSCALE, rampColors } from "./plotly/theme";
+import { alpha, colorscale, hoverLabel, sweep, type ChartTheme } from "./plotly/theme";
 
 const TRANSPARENT = "rgba(0,0,0,0)";
-const axisTitle = (text: string) => ({ text, font: { color: MUTED, size: 11 }, standoff: 10 });
-const DATE_TICK = { year: "%Y", month: "%b %Y", day: "%b %-d", time: "%b %-d %H:%M" } as const;
-const DATE_HOVER = { year: "%Y", month: "%B %Y", day: "%b %-d, %Y", time: "%b %-d, %Y %H:%M" } as const;
+
+const axisTitle = (t: ChartTheme, text: string) => ({ text, font: { color: t.muted, size: 11, family: t.sans }, standoff: 10 });
+/** Numbers (ticks) in Geist Mono, words in Geist. */
+const tickFont = (t: ChartTheme) => ({ color: t.muted, family: t.mono, size: 10 });
 
 /** Tooltip: the full x label in bold, then the formatted value. */
 const hover = (c: FigureContext) => `<b>%{customdata}</b><br>${c.yTitle}: %{text}<extra></extra>`;
 
-function xAxis(c: FigureContext) {
-  const base = { title: axisTitle(c.xTitle), showgrid: false, linecolor: GRID, automargin: true, tickfont: { color: INK } };
+function xAxis(c: FigureContext, t: ChartTheme) {
+  const base = { title: axisTitle(t, c.xTitle), showgrid: false, linecolor: t.grid, automargin: true, tickfont: tickFont(t) };
   if (c.xKind === "date" && c.dateAxis) {
-    const g = c.dateAxis.granularity;
-    const tick = g === "day" && c.dateAxis.multiYear ? "%b %-d, %Y" : DATE_TICK[g];
-    return { ...base, type: "date", tickformat: tick, hoverformat: DATE_HOVER[g] };
+    // Our own lower-case labels ("nov 2024") at up to 8 evenly spaced points.
+    const every = Math.max(1, Math.ceil(c.x.length / 8));
+    const at = c.x.map((_, i) => i).filter((i) => i % every === 0);
+    return { ...base, type: "date", tickvals: at.map((i) => c.x[i]), ticktext: at.map((i) => c.labels[i]) };
   }
-  if (c.xKind === "category") return { ...base, type: "category", tickvals: c.x, ticktext: c.labels };
+  if (c.xKind === "category") return { ...base, type: "category", tickvals: c.x, ticktext: c.labels, tickfont: { ...tickFont(t), family: t.sans } };
   return base;
 }
 
-function yAxis(c: FigureContext, fromZero = true) {
-  const t = valueTicks(c, fromZero);
+function yAxis(c: FigureContext, t: ChartTheme, fromZero = true) {
+  const ticks = valueTicks(c, fromZero);
   return {
-    title: axisTitle(c.yTitle),
-    gridcolor: GRID,
+    title: axisTitle(t, c.yTitle),
+    gridcolor: t.grid,
     zeroline: false,
     automargin: true,
-    tickvals: t.vals,
-    ticktext: t.text,
-    range: t.range,
-    tickfont: { color: INK },
+    tickvals: ticks.vals,
+    ticktext: ticks.text,
+    range: ticks.range,
+    tickfont: tickFont(t),
   };
 }
 
-function layout(c: FigureContext, height: number, extra: Record<string, unknown> = {}) {
+function base(t: ChartTheme, height: number, extra: Record<string, unknown> = {}) {
   return {
     height,
     autosize: true,
-    margin: { l: 64, r: 18, t: 12, b: 56 },
     paper_bgcolor: TRANSPARENT,
     plot_bgcolor: TRANSPARENT,
-    font: { family: FONT, size: 11, color: INK },
-    hoverlabel: HOVERLABEL,
+    font: { family: t.sans, size: 11, color: t.text },
+    hoverlabel: hoverLabel(t),
+    modebar: { bgcolor: TRANSPARENT, color: t.muted, activecolor: t.accent },
     showlegend: false,
-    xaxis: xAxis(c),
-    yaxis: yAxis(c),
     ...extra,
   };
 }
 
-/** Bars coloured along the brand sweep, with a soft offset shadow behind them for depth. */
-export function barFigure(c: FigureContext, height: number): Figure {
+function layout(c: FigureContext, t: ChartTheme, height: number, extra: Record<string, unknown> = {}) {
+  return base(t, height, { margin: { l: 64, r: 18, t: 12, b: 56 }, xaxis: xAxis(c, t), yaxis: yAxis(c, t), ...extra });
+}
+
+/** Bars in the first chart colour, with a faint offset shadow behind them for depth. */
+export function barFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   const main = {
     type: "bar",
     x: c.x,
@@ -61,20 +65,21 @@ export function barFigure(c: FigureContext, height: number): Figure {
     text: c.yText,
     textposition: "none",
     hovertemplate: hover(c),
-    marker: { color: rampColors(c.y.length), line: { width: 0 } },
+    marker: { color: sweep([t.chart[0], t.chart[4]], c.y.length), line: { width: 0 } },
   };
   const shadow = c.xKind === "category"
-    ? [{ type: "bar", x: c.x, y: c.y, offset: -0.26, width: 0.6, marker: { color: "rgba(30,27,75,0.10)" }, hoverinfo: "skip" }]
+    ? [{ type: "bar", x: c.x, y: c.y, offset: -0.26, width: 0.6, marker: { color: alpha(t.text, t.dark ? 0.06 : 0.08) }, hoverinfo: "skip" }]
     : [];
   const placed = c.xKind === "category" ? { ...main, offset: -0.32, width: 0.6 } : main;
-  return { data: [...shadow, placed], layout: layout(c, height, { barmode: "overlay", barcornerradius: 6, bargap: 0.3 }) };
+  return { data: [...shadow, placed], layout: layout(c, t, height, { barmode: "overlay", barcornerradius: 6, bargap: 0.3 }) };
 }
 
-/** A smooth line over a gradient-filled area, with a blurred shadow line underneath. */
-export function lineFigure(c: FigureContext, height: number): Figure {
+/** A smooth line over a gradient-filled area, with a soft glow line underneath. */
+export function lineFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
+  const color = t.chart[0];
   const shadow = {
     type: "scatter", mode: "lines", x: c.x, y: c.y, hoverinfo: "skip",
-    line: { shape: "spline", smoothing: 0.8, width: 9, color: "rgba(99,102,241,0.12)" },
+    line: { shape: "spline", smoothing: 0.8, width: 9, color: alpha(color, 0.16) },
   };
   const main = {
     type: "scatter",
@@ -84,17 +89,17 @@ export function lineFigure(c: FigureContext, height: number): Figure {
     customdata: c.full,
     text: c.yText,
     hovertemplate: hover(c),
-    line: { shape: "spline", smoothing: 0.8, width: 3, color: "#ec4899" },
-    marker: { size: 7, color: "#ffffff", line: { color: "#ec4899", width: 2 } },
+    line: { shape: "spline", smoothing: 0.8, width: 2.5, color },
+    marker: { size: 6, color: t.panel, line: { color, width: 2 } },
     fill: "tozeroy",
-    fillcolor: "rgba(236,72,153,0.12)",
-    fillgradient: { type: "vertical", colorscale: [[0, "rgba(56,189,248,0.04)"], [1, "rgba(236,72,153,0.30)"]] },
+    fillcolor: alpha(color, 0.12),
+    fillgradient: { type: "vertical", colorscale: [[0, alpha(color, 0.0)], [1, alpha(color, 0.32)]] },
   };
-  return { data: [shadow, main], layout: layout(c, height) };
+  return { data: [shadow, main], layout: layout(c, t, height) };
 }
 
 /** A donut with the largest slice pulled out a little and the total in the middle. */
-export function pieFigure(c: FigureContext, height: number): Figure {
+export function pieFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   const biggest = c.y.indexOf(Math.max(...c.y));
   const total = c.y.reduce((a, b) => a + b, 0);
   return {
@@ -103,25 +108,29 @@ export function pieFigure(c: FigureContext, height: number): Figure {
       labels: c.labels,
       values: c.y,
       customdata: c.yText,
-      hole: 0.56,
+      hole: 0.58,
       sort: false,
       pull: c.y.map((_, i) => (i === biggest ? 0.06 : 0)),
-      marker: { colors: PALETTE, line: { color: "#ffffff", width: 2 } },
+      marker: { colors: t.chart, line: { color: t.panel, width: 2 } },
       texttemplate: "%{label}<br>%{percent}",
       textposition: "outside",
+      outsidetextfont: { color: t.muted, family: t.sans },
       automargin: true,
       hovertemplate: `<b>%{label}</b><br>${c.yTitle}: %{customdata}<br>%{percent}<extra></extra>`,
     }],
-    layout: {
-      height, autosize: true, margin: { l: 24, r: 24, t: 24, b: 24 }, paper_bgcolor: TRANSPARENT,
-      font: { family: FONT, size: 11, color: INK }, hoverlabel: HOVERLABEL, showlegend: false,
-      annotations: [{ text: `<b>${c.fmt.yTick(total)}</b><br><span style="font-size:10px">total</span>`, showarrow: false, font: { size: 15, color: INK } }],
-    },
+    layout: base(t, height, {
+      margin: { l: 24, r: 24, t: 24, b: 24 },
+      annotations: [{
+        text: `<b>${c.fmt.yTick(total)}</b><br><span style="font-size:10px">total</span>`,
+        showarrow: false,
+        font: { size: 15, color: t.text, family: t.mono },
+      }],
+    }),
   };
 }
 
 /** Points sized and coloured by value. */
-export function scatterFigure(c: FigureContext, height: number): Figure {
+export function scatterFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   const max = Math.max(...c.y.map(Math.abs)) || 1;
   return {
     data: [{
@@ -135,17 +144,17 @@ export function scatterFigure(c: FigureContext, height: number): Figure {
       marker: {
         size: c.y.map((v) => 8 + 18 * (Math.abs(v) / max)),
         color: c.y,
-        colorscale: COLORSCALE,
+        colorscale: colorscale([t.chart[4], t.chart[0], t.chart[1]]),
         opacity: 0.85,
-        line: { color: "#ffffff", width: 1.5 },
+        line: { color: t.panel, width: 1.5 },
       },
     }],
-    layout: layout(c, height, { yaxis: yAxis(c, false) }),
+    layout: layout(c, t, height, { yaxis: yAxis(c, t, false) }),
   };
 }
 
 /** Largest first, narrowing down: good for stages or rankings. */
-export function funnelFigure(c: FigureContext, height: number): Figure {
+export function funnelFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   const order = c.y.map((_, i) => i).sort((a, b) => c.y[b] - c.y[a]);
   return {
     data: [{
@@ -155,21 +164,17 @@ export function funnelFigure(c: FigureContext, height: number): Figure {
       customdata: order.map((i) => c.yText[i]),
       texttemplate: "%{customdata}  ·  %{percentInitial:.0%}",
       textposition: "inside",
-      textfont: { color: "#ffffff" },
+      textfont: { color: t.panel, family: t.mono },
       hovertemplate: `<b>%{y}</b><br>${c.yTitle}: %{customdata}<extra></extra>`,
-      marker: { color: rampColors(order.length) },
-      connector: { fillcolor: "rgba(99,102,241,0.08)", line: { width: 0 } },
+      marker: { color: sweep([t.chart[0], t.chart[2]], order.length) },
+      connector: { fillcolor: alpha(t.chart[2], 0.1), line: { width: 0 } },
     }],
-    layout: {
-      height, autosize: true, margin: { l: 16, r: 16, t: 12, b: 12 }, paper_bgcolor: TRANSPARENT, plot_bgcolor: TRANSPARENT,
-      font: { family: FONT, size: 11, color: INK }, hoverlabel: HOVERLABEL, showlegend: false,
-      yaxis: { automargin: true }, xaxis: { visible: false },
-    },
+    layout: base(t, height, { margin: { l: 16, r: 16, t: 12, b: 12 }, yaxis: { automargin: true, tickfont: { color: t.muted } }, xaxis: { visible: false } }),
   };
 }
 
 /** Each category as a block sized by its value. */
-export function treemapFigure(c: FigureContext, height: number): Figure {
+export function treemapFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   return {
     data: [{
       type: "treemap",
@@ -180,20 +185,18 @@ export function treemapFigure(c: FigureContext, height: number): Figure {
       customdata: c.yText,
       texttemplate: "<b>%{label}</b><br>%{customdata}",
       hovertemplate: `<b>%{label}</b><br>${c.yTitle}: %{customdata}<br>%{percentRoot:.1%} of the total<extra></extra>`,
-      marker: { colors: rampColors(c.y.length), line: { color: "#ffffff", width: 2 }, cornerradius: 6 },
-      textfont: { color: "#ffffff" },
+      marker: { colors: sweep(t.chart, c.y.length), line: { color: t.panel, width: 2 }, cornerradius: 6 },
+      textfont: { color: t.panel, family: t.sans },
       tiling: { pad: 2 },
     }],
-    layout: {
-      height, autosize: true, margin: { l: 4, r: 4, t: 4, b: 4 }, paper_bgcolor: TRANSPARENT,
-      font: { family: FONT, size: 12, color: INK }, hoverlabel: HOVERLABEL,
-    },
+    layout: base(t, height, { margin: { l: 4, r: 4, t: 4, b: 4 } }),
   };
 }
 
 /** Categories around a circle; the shape shows which stand out. */
-export function radarFigure(c: FigureContext, height: number): Figure {
-  const t = valueTicks(c);
+export function radarFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
+  const ticks = valueTicks(c);
+  const color = t.chart[3];
   return {
     data: [{
       type: "scatterpolar",
@@ -203,45 +206,44 @@ export function radarFigure(c: FigureContext, height: number): Figure {
       text: [...c.yText, c.yText[0]],
       hovertemplate: hover(c),
       fill: "toself",
-      fillcolor: "rgba(236,72,153,0.18)",
-      line: { color: "#ec4899", width: 2.5 },
-      marker: { color: "#6366f1", size: 6 },
+      fillcolor: alpha(color, 0.18),
+      line: { color, width: 2.5 },
+      marker: { color: t.chart[2], size: 6 },
     }],
-    layout: {
-      height, autosize: true, margin: { l: 48, r: 48, t: 28, b: 28 }, paper_bgcolor: TRANSPARENT,
-      font: { family: FONT, size: 11, color: INK }, hoverlabel: HOVERLABEL, showlegend: false,
+    layout: base(t, height, {
+      margin: { l: 48, r: 48, t: 28, b: 28 },
       polar: {
-        bgcolor: "rgba(224,231,255,0.25)",
-        radialaxis: { tickvals: t.vals, ticktext: t.text, range: t.range, gridcolor: GRID, linecolor: GRID, angle: 90, tickfont: { size: 9 } },
-        angularaxis: { gridcolor: GRID, linecolor: GRID },
+        bgcolor: TRANSPARENT,
+        radialaxis: { tickvals: ticks.vals, ticktext: ticks.text, range: ticks.range, gridcolor: t.grid, linecolor: t.grid, angle: 90, tickfont: { ...tickFont(t), size: 9 } },
+        angularaxis: { gridcolor: t.grid, linecolor: t.grid, tickfont: { color: t.muted } },
       },
-    },
+    }),
   };
 }
 
 /** How the values are spread out: how many rows fall in each range. */
-export function histogramFigure(c: FigureContext, height: number): Figure {
+export function histogramFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   const bins = Math.min(24, Math.max(5, Math.ceil(Math.sqrt(c.y.length))));
   return {
     data: [{
       type: "histogram",
       x: c.y,
       nbinsx: bins,
-      marker: { color: "#818cf8", line: { color: "#ffffff", width: 1.5 } },
+      marker: { color: t.chart[2], line: { color: t.panel, width: 1.5 } },
       hovertemplate: `%{x}<br>%{y} rows<extra></extra>`,
     }],
-    layout: {
-      ...layout(c, height),
-      xaxis: { title: axisTitle(c.yTitle), tickprefix: c.money ? "$" : "", tickformat: "~s", showgrid: false, linecolor: GRID },
-      yaxis: { title: axisTitle("Number of rows"), gridcolor: GRID, zeroline: false },
+    layout: base(t, height, {
+      margin: { l: 64, r: 18, t: 12, b: 56 },
+      xaxis: { title: axisTitle(t, c.yTitle), tickprefix: c.money ? "$" : "", tickformat: "~s", showgrid: false, linecolor: t.grid, tickfont: tickFont(t) },
+      yaxis: { title: axisTitle(t, "Number of rows"), gridcolor: t.grid, zeroline: false, tickfont: tickFont(t) },
       barcornerradius: 4,
       bargap: 0.06,
-    },
+    }),
   };
 }
 
 /** Median, quartiles and outliers of the values; each point is a row. */
-export function boxFigure(c: FigureContext, height: number): Figure {
+export function boxFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   return {
     data: [{
       type: "box",
@@ -254,10 +256,10 @@ export function boxFigure(c: FigureContext, height: number): Figure {
       pointpos: 0,
       boxmean: true,
       hovertemplate: `<b>%{customdata}</b><br>${c.yTitle}: %{text}<extra></extra>`,
-      marker: { color: "#ec4899", size: 6, opacity: 0.7 },
-      line: { color: "#6366f1", width: 2 },
-      fillcolor: "rgba(99,102,241,0.14)",
+      marker: { color: t.chart[1], size: 6, opacity: 0.75 },
+      line: { color: t.chart[0], width: 2 },
+      fillcolor: alpha(t.chart[0], 0.14),
     }],
-    layout: { ...layout(c, height), xaxis: { showticklabels: false, showgrid: false }, yaxis: yAxis(c, false) },
+    layout: layout(c, t, height, { xaxis: { showticklabels: false, showgrid: false }, yaxis: yAxis(c, t, false) }),
   };
 }

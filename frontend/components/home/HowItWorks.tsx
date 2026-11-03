@@ -11,8 +11,8 @@ export default function HowItWorks() {
     <Section id="how" eyebrow="How it works" title="From file to answer in three steps">
       <ol className="grid gap-4 md:grid-cols-3">
         {STEPS.map((s, i) => (
-          <li key={s.title} className="depth relative rounded-2xl border border-border bg-white p-6">
-            <span className="bg-gradient-brand flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white">{i + 1}</span>
+          <li key={s.title} className="depth relative rounded-2xl border border-border bg-card p-6">
+            <span className="btn-accent flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold">{i + 1}</span>
             <h3 className="mt-4 font-semibold">{s.title}</h3>
             <p className="mt-2 text-sm leading-6 text-muted">{s.text}</p>
           </li>

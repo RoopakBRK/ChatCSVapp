@@ -1,40 +1,59 @@
+import type { FileSummary } from "@/lib/api";
+import { formatCount } from "@/lib/format";
+import ThemeToggle from "./ThemeToggle";
+
 type Props = {
-  resultsCount: number;
-  resultsOpen: boolean;
-  onToggleResults: () => void;
+  title: string;
+  files: FileSummary[];
+  canvasOpen: boolean;
+  canvasCount: number;
+  onToggleCanvas: () => void;
   onOpenHistory: () => void;
 };
 
-/** Floats over the top corners of the chat card, so the card itself can run all the way to the top. */
-export default function ChatHeader({ resultsCount, resultsOpen, onToggleResults, onOpenHistory }: Props) {
+/** Chat title in the serif face, the loaded tables, the theme switch and the canvas toggle. */
+export default function ChatHeader({ title, files, canvasOpen, canvasCount, onToggleCanvas, onOpenHistory }: Props) {
   return (
-    <>
-      <button
-        onClick={onOpenHistory}
-        className="absolute left-3 top-3 z-10 rounded-full border border-border bg-white px-4 py-2 text-sm font-medium shadow-sm md:hidden"
-      >
-        History
+    <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <button onClick={onOpenHistory} aria-label="Open chats" className="btn-ghost flex h-9 w-9 shrink-0 items-center justify-center rounded-full md:hidden">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+          <path d="M4 6h16M4 12h16M4 18h10" />
+        </svg>
       </button>
 
-      {/* Round avatar-style button that shows or hides the results panel */}
-      <button
-        onClick={onToggleResults}
-        aria-pressed={resultsOpen}
-        aria-label={`Results${resultsCount ? ` (${resultsCount})` : ""}`}
-        title="Results"
-        className={`bg-gradient-brand absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full text-white shadow-md ring-2 transition-transform hover:scale-105 ${
-          resultsOpen ? "ring-pink-300" : "ring-white"
-        }`}
+      <h1 className="min-w-0 shrink truncate text-2xl leading-tight" title={title}>
+        {title}
+      </h1>
+
+      <div
+        className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [mask-image:linear-gradient(to_right,black_88%,transparent)] [scrollbar-width:none] sm:flex [&::-webkit-scrollbar]:hidden"
+        aria-label="Loaded tables"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
-        </svg>
-        {resultsCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-pink-600 shadow ring-1 ring-pink-200">
-            {resultsCount}
+        {files.map((f) => (
+          <span key={f.file_name} className="chip" title={f.file_name}>
+            <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden />
+            {f.table_name}
+            <span className="font-mono text-muted">{formatCount(f.row_count)}</span>
           </span>
-        )}
+        ))}
+      </div>
+      <div className="flex-1 sm:hidden" />
+
+      <ThemeToggle />
+      <button
+        onClick={onToggleCanvas}
+        aria-pressed={canvasOpen}
+        aria-label={`${canvasOpen ? "Close" : "Open"} canvas`}
+        title={`${canvasOpen ? "Close" : "Open"} canvas${canvasOpen ? " (Esc)" : ""}`}
+        className={`flex h-9 items-center gap-2 rounded-full px-3 text-sm ${canvasOpen ? "btn-accent" : "btn-ghost"}`}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M14 4v16" />
+        </svg>
+        <span className="hidden sm:inline">Canvas</span>
+        {canvasCount > 0 && <span className="font-mono text-xs opacity-80">{canvasCount}</span>}
       </button>
-    </>
+    </header>
   );
 }

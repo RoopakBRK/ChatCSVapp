@@ -1,108 +1,366 @@
 @import "tailwindcss";
 
-/* Light only: mostly white, with soft blue and pink washes. */
+/*
+ * CSVChat design tokens. Every colour in the app comes from these variables; components use them
+ * through the Tailwind utilities registered in @theme below (bg-panel, text-muted, border-border...)
+ * or directly as var(--...). Charts read them at runtime (components/charts/plotly/theme.ts).
+ *
+ * Theme selection: the system setting by default; a saved choice (sun/moon toggle) is applied as
+ * <html data-theme="light|dark"> before first paint by the script in app/layout.tsx.
+ */
+
+/* Day */
 :root {
   color-scheme: light;
-  --foreground: #1f2347;
-  --muted: #6b7194;
-  --glass: rgba(255, 255, 255, 0.72);
-  --glass-strong: #ffffff;
-  --border: rgba(99, 102, 241, 0.14);
-  --accent: #6366f1;
-  --grad-from: #38bdf8; /* sky */
-  --grad-to: #ec4899; /* pink */
+  --bg: #f7f4ee;
+  --panel: #ffffff;
+  --card: #fdfbf7;
+  --border: rgba(27, 33, 51, 0.1);
+  --border-strong: rgba(27, 33, 51, 0.18);
+  --text: #1b2133;
+  --muted: #626a7d;
+  --accent: #b7791f;
+  --accent-hover: #c78a2e; /* lighter on hover, so the dark label keeps AA contrast (6.2:1) */
+  --on-accent: #11151f;
+  --accent-ink: #8a5a14; /* amber for text: #b7791f is only 3.3-3.6:1 on light surfaces */
+  --error-ink: #b91c1c; /* red for text: #dc2626 is 4.4:1 on the page background */
+  --focus: #f5b544;
+  --focus-halo: #1b2133; /* amber alone is 1.7:1 on the light page; the dark edge makes the ring visible (3:1+) */
+  --teal: #0f766e;
+  --success: #047857;
+  --error: #dc2626;
+  --chart-1: #0f766e;
+  --chart-2: #b7791f;
+  --chart-3: #6366f1;
+  --chart-4: #e11d48;
+  --chart-5: #0284c7;
+
+  /* Mixed from the colours above, so they follow the theme automatically. */
+  --glass: color-mix(in srgb, var(--panel) 78%, transparent);
+  --hover: color-mix(in srgb, var(--text) 6%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --teal-soft: color-mix(in srgb, var(--teal) 12%, transparent);
+  --error-soft: color-mix(in srgb, var(--error) 12%, transparent);
+  --success-soft: color-mix(in srgb, var(--success) 12%, transparent);
+  --scrim: color-mix(in srgb, #000000 35%, transparent);
+  /* Elevation scale: --shadow for resting surfaces (cards, panels), --shadow-2 for floating layers
+     (menus, popovers, toasts, dialogs). Nothing else casts a shadow. */
+  --shadow: 0 1px 0 color-mix(in srgb, #ffffff 60%, transparent) inset, 0 12px 32px -18px color-mix(in srgb, var(--text) 35%, transparent);
+  --shadow-2: 0 1px 0 color-mix(in srgb, #ffffff 60%, transparent) inset, 0 24px 48px -16px color-mix(in srgb, var(--text) 40%, transparent);
+  --glow-1: rgba(245, 181, 68, 0.06);
+  --glow-2: rgba(45, 212, 191, 0.06);
+  --grain-opacity: 0.035;
+  --glass-blur: blur(18px) saturate(1.15);
+  /* Chart tooltips are a dark glass card in both themes. */
+  --tooltip-bg: rgba(18, 26, 46, 0.94);
+  --tooltip-text: #e8ecf5;
+  --tooltip-border: #ffffff1f;
+  /* Soft amber glow around the drop zone. */
+  --drop-glow: rgba(245, 181, 68, 0.18);
+}
+
+/* Night: the same tokens, used when the system is dark and no choice was saved... */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b1020;
+    --panel: #121a2e;
+    --card: #1a2440;
+    --border: #ffffff14;
+    --border-strong: #ffffff26;
+    --text: #e8ecf5;
+    --muted: #8b95b0;
+    --accent: #f5b544;
+    --accent-hover: #ffc861;
+    --on-accent: #1a1204;
+    --accent-ink: #f5b544;
+    --error-ink: #f87171;
+    --focus-halo: #0b1020;
+    --teal: #2dd4bf;
+    --success: #34d399;
+    --error: #f87171;
+    --chart-1: #2dd4bf;
+    --chart-2: #f5b544;
+    --chart-3: #818cf8;
+    --chart-4: #fb7185;
+    --chart-5: #38bdf8;
+    --scrim: color-mix(in srgb, #000000 55%, transparent);
+    --shadow: 0 1px 0 #ffffff0a inset, 0 16px 40px -20px #000000cc;
+  --shadow-2: 0 1px 0 #ffffff0f inset, 0 28px 56px -16px #000000e6;
+    --shadow-2: 0 1px 0 #ffffff0f inset, 0 28px 56px -16px #000000e6;
+    --grain-opacity: 0.05;
+  }
+}
+
+/* ...and when dark was chosen with the toggle. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --panel: #121a2e;
+  --card: #1a2440;
+  --border: #ffffff14;
+  --border-strong: #ffffff26;
+  --text: #e8ecf5;
+  --muted: #8b95b0;
+  --accent: #f5b544;
+  --accent-hover: #ffc861;
+  --on-accent: #1a1204;
+  --accent-ink: #f5b544;
+  --error-ink: #f87171;
+  --focus-halo: #0b1020;
+  --teal: #2dd4bf;
+  --success: #34d399;
+  --error: #f87171;
+  --chart-1: #2dd4bf;
+  --chart-2: #f5b544;
+  --chart-3: #818cf8;
+  --chart-4: #fb7185;
+  --chart-5: #38bdf8;
+  --scrim: color-mix(in srgb, #000000 55%, transparent);
+  --shadow: 0 1px 0 #ffffff0a inset, 0 16px 40px -20px #000000cc;
+  --shadow-2: 0 1px 0 #ffffff0f inset, 0 28px 56px -16px #000000e6;
+  --grain-opacity: 0.05;
 }
 
 @theme inline {
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-glass: var(--glass);
-  --color-glass-strong: var(--glass-strong);
+  --color-background: var(--bg);
+  --color-panel: var(--panel);
+  --color-card: var(--card);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--text);
+  --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-error-ink: var(--error-ink);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
+  --color-hover: var(--hover);
+  --color-scrim: var(--scrim);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-instrument-serif);
 }
 
 html,
 body {
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
-  background-color: #ffffff;
-  /* A light blue-to-pink sweep across the whole page, with deeper pools of colour in the corners. */
+  height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--bg);
+  /* Soft amber glow top-left, teal glow bottom-right. */
   background-image:
-    radial-gradient(56rem 36rem at -6% -8%, rgba(125, 211, 252, 0.5), transparent 68%),
-    radial-gradient(50rem 34rem at 106% -4%, rgba(249, 168, 212, 0.5), transparent 68%),
-    radial-gradient(48rem 32rem at 104% 106%, rgba(186, 230, 253, 0.46), transparent 68%),
-    radial-gradient(44rem 30rem at -2% 104%, rgba(251, 207, 232, 0.44), transparent 68%),
-    linear-gradient(135deg, #eef8ff 0%, #ffffff 42%, #fff0f8 100%);
+    radial-gradient(60rem 40rem at -10% -10%, var(--glow-1), transparent 70%),
+    radial-gradient(60rem 40rem at 110% 110%, var(--glow-2), transparent 70%);
   background-attachment: fixed;
 }
 
-/* Panels: still mostly white, each tinted with its own soft blue/pink gradient. */
-.glass,
-.panel-main,
-.panel-sidebar,
-.panel-results {
-  border: 1px solid var(--border);
-  box-shadow: 0 10px 34px -14px rgba(99, 102, 241, 0.24);
+body {
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  isolation: isolate;
 }
-.glass {
+
+/* A faint film grain over the background (under the content). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-instrument-serif), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* One focus ring everywhere: amber #f5b544, with a thin contrasting edge for the light theme. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--focus-halo);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/*
+ * Component classes are Tailwind @utility rules, not plain classes: Tailwind orders them before
+ * single-purpose utilities, so "chip whitespace-normal" or "glass max-lg:bg-panel" work as expected.
+ * (A plain @layer components block came out unlayered and overrode every utility.)
+ */
+
+/* Frosted panels with a hairline border. The blur goes through a variable: with a literal value
+   the CSS optimiser kept only the -webkit- prefixed property in dev, which Chrome ignores. */
+@utility glass {
   background: var(--glass);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-.panel-main {
-  /* Deeper than the page so white bubbles, charts and cards stand out on it. */
-  background: linear-gradient(160deg, #c9e2fa 0%, #dcdffa 42%, #f2d3ec 100%);
-  border-color: rgba(99, 102, 241, 0.22);
-}
-.panel-sidebar {
-  background: linear-gradient(180deg, rgba(224, 242, 254, 0.92) 0%, rgba(255, 255, 255, 0.9) 48%, rgba(252, 231, 243, 0.92) 100%);
-}
-.panel-results {
-  background: linear-gradient(200deg, rgba(252, 231, 243, 0.9) 0%, rgba(255, 255, 255, 0.94) 42%, rgba(224, 242, 254, 0.9) 100%);
+  border: 1px solid var(--border);
+  backdrop-filter: var(--glass-blur);
 }
 
-.bg-gradient-brand {
-  background-image: linear-gradient(120deg, var(--grad-from), var(--grad-to));
+@utility card {
+  background: var(--card);
+  border: 1px solid var(--border);
 }
 
-.text-gradient-brand {
-  background-image: linear-gradient(120deg, #0ea5e9, #ec4899);
+@utility depth {
+  box-shadow: var(--shadow);
+}
+
+@utility depth-2 {
+  box-shadow: var(--shadow-2);
+}
+
+/* The surface charts sit on. */
+@utility chart-stage {
+  background: radial-gradient(120% 80% at 50% 100%, var(--accent-soft), transparent 70%);
+}
+
+@utility btn-accent {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  transition: background-color 0.15s;
+  &:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+@utility btn-ghost {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  transition: background-color 0.15s, border-color 0.15s;
+  &:hover:not(:disabled) {
+    background: var(--hover);
+    border-color: var(--border-strong);
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 9999px;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  white-space: nowrap;
+  &:is(button) {
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  &:is(button):hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+}
+
+@utility text-gradient-accent {
+  background-image: linear-gradient(110deg, var(--accent), var(--teal));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(129, 140, 248, 0.4) transparent;
+/* ---------- Motion ---------- */
+
+@keyframes slide-in-right {
+  from { transform: translateX(32px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes slide-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+/* Utilities (not plain classes) so they work with breakpoints: "slide-up lg:slide-in". */
+@utility slide-in {
+  animation: slide-in-right 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@utility slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* Isometric-style depth: a lit top edge, a contact shadow and a soft long shadow, like a raised tile. */
-.depth {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 2px rgba(30, 27, 75, 0.06),
-    0 10px 24px -10px rgba(79, 70, 229, 0.28),
-    0 22px 40px -28px rgba(236, 72, 153, 0.35);
+@keyframes listening {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 8px var(--accent-soft); }
+}
+.listening { animation: listening 1.2s ease-in-out infinite; }
+
+/* New messages fade in and rise a little. */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.msg-in { animation: msg-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Charts settle in. */
+@keyframes chart-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.chart-in { animation: chart-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* The step in progress shimmers. */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.shimmer {
+  background-image: linear-gradient(90deg, var(--muted) 0%, var(--text) 45%, var(--accent) 50%, var(--text) 55%, var(--muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
 }
 
-/* The surface charts sit on: a pale floor with a soft glow, so 3D shapes read as standing on something. */
-.chart-stage {
-  background:
-    radial-gradient(120% 70% at 50% 100%, rgba(236, 72, 153, 0.07), transparent 70%),
-    linear-gradient(180deg, rgba(224, 242, 254, 0.45), rgba(255, 255, 255, 0) 60%);
+/* Drop zone with a soft amber glow; it brightens while a file is dragged over it. */
+.drop-glow {
+  box-shadow: 0 0 0 1px var(--border), 0 0 48px -8px var(--drop-glow), inset 0 0 60px -30px var(--drop-glow);
+  transition: box-shadow 0.2s, border-color 0.2s;
 }
-
-/* Results panel slides in from the right */
-@keyframes slide-in {
-  from { transform: translateX(24px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+.drop-glow[data-active="true"], .drop-glow:hover {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 64px -6px var(--drop-glow), inset 0 0 80px -30px var(--drop-glow);
 }
-.slide-in { animation: slide-in 0.25s ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
-  .slide-in { animation: none; }
+  html { scroll-behavior: auto; }
+  .slide-in, .slide-up, .lg\:slide-in, .listening, .msg-in, .chart-in { animation: none; }
+  /* The current step stays readable (no moving gradient). */
+  .shimmer { animation: none; background: none; color: var(--text); }
 }

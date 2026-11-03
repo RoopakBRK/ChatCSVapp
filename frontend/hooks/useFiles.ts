@@ -1,8 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { deleteFile, errorMessage, getFiles, uploadFiles, uploadFromUrl } from "@/lib/api";
-import type { FileSummary, Relationship, SessionFiles } from "@/lib/api";
+import { deleteFile, errorMessage, getFiles, loadSample as fetchSample, uploadFromUrl, uploadOne } from "@/lib/api";
+import type { FileSummary, Relationship, SessionFiles, UploadResponse } from "@/lib/api";
+
+/** One file on its way in: reading (bytes being sent) -> cleaning (server at work) -> ready, or error. */
+export type FileProgress = {
+  name: string;
+  stage: "reading" | "cleaning" | "ready" | "error";
+  sent?: number; // 0..1 while reading
+  rows?: number;
+  reason?: string;
+};
 
 const SESSION_KEY = "chatcsv.session_id";
 const GONE = "The files for this chat are no longer available. Add them again with + to see its tables and charts.";
@@ -16,6 +25,14 @@ export function useFiles() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false); // the saved session (if any) has been looked up
+  const [progress, setProgress] = useState<FileProgress[]>([]);
+  const patch = useCallback((name: string, change: Partial<FileProgress>) => {
+    setProgress((list) => list.map((p) => (p.name === name ? { ...p, ...change } : p)));
+  }, []);
+  /** Keep the finished cards on screen for a moment, then tidy them away. */
+  const settle = useCallback(() => {
+    setTimeout(() => setProgress((list) => (list.every((p) => p.stage === "ready" || p.stage === "error") ? list.filter((p) => p.stage === "error") : list)), 2500);
+  }, []);
 
   const apply = useCallback((data: SessionFiles | null) => {
     setFiles(data?.files ?? []);
@@ -69,53 +86,101 @@ export function useFiles() {
     setError(null);
   }, [apply]);
 
-  /** Uploads the files. Resolves to a note for the chat history plus the session id, or null if nothing was uploaded. */
+  const adopt = useCallback(
+    (data: UploadResponse) => {
+      setSessionId(data.session_id);
+      localStorage.setItem(SESSION_KEY, data.session_id);
+      apply(data);
+    },
+    [apply],
+  );
+
+  /**
+   * Uploads the files one at a time so each gets a truthful progress card (bytes sent, then
+   * cleaning on the server, then ready). Resolves to a note for the chat history, or null.
+   */
   const upload = useCallback(
     async (picked: File[]): Promise<{ note: string; sessionId: string } | null> => {
+      setError(null);
+      setProgress(
+        picked.map((f) =>
+          f.name.toLowerCase().endsWith(".csv")
+            ? { name: f.name, stage: "reading", sent: 0 }
+            : { name: f.name, stage: "error", reason: "Not a .csv file" },
+        ),
+      );
       const csvs = picked.filter((f) => f.name.toLowerCase().endsWith(".csv"));
       if (csvs.length === 0) {
         setError("Only .csv files can be uploaded. Please choose one or more CSV files.");
         return null;
       }
       setUploading(true);
-      setError(null);
-      try {
-        const data = await uploadFiles(csvs, sessionId);
-        setSessionId(data.session_id);
-        localStorage.setItem(SESSION_KEY, data.session_id);
-        apply(data);
-        const skipped = [...data.rejected, ...picked.filter((f) => !csvs.includes(f)).map((f) => ({ name: f.name, reason: "not a .csv file" }))];
-        if (skipped.length) setError(`Some files were skipped: ${skipped.map((r) => `${r.name} (${r.reason})`).join(", ")}`);
-        return { note: `Uploaded: ${data.uploaded.join(", ")}`, sessionId: data.session_id };
-      } catch (e) {
-        setError(errorMessage(e));
-        return null;
-      } finally {
-        setUploading(false);
+      let sid = sessionId;
+      const done: string[] = [];
+      for (const file of csvs) {
+        try {
+          const data = await uploadOne(file, sid, (sent) => patch(file.name, sent >= 1 ? { stage: "cleaning", sent: 1 } : { sent }));
+          sid = data.session_id;
+          adopt(data);
+          done.push(file.name);
+          patch(file.name, { stage: "ready", rows: data.files.find((f) => f.file_name === file.name)?.row_count });
+        } catch (e) {
+          patch(file.name, { stage: "error", reason: errorMessage(e).replace(/^We couldn't use that file\.\n/, "") });
+        }
       }
+      setUploading(false);
+      settle();
+      return done.length && sid ? { note: `Uploaded: ${done.join(", ")}`, sessionId: sid } : null;
     },
-    [sessionId, apply],
+    [sessionId, adopt, patch, settle],
   );
+
+  /** Load the bundled Online Shop files in one click, with a progress card per file. */
+  const loadSample = useCallback(async (): Promise<{ note: string; sessionId: string } | null> => {
+    setError(null);
+    setProgress([]);
+    setUploading(true);
+    try {
+      const data = await fetchSample(sessionId, (e) => {
+        if (e.type === "start") setProgress(e.files.map((name) => ({ name, stage: "reading" })));
+        if (e.type === "file") patch(e.name, { stage: e.stage, rows: e.rows, reason: e.reason });
+      });
+      adopt(data);
+      return { note: `Loaded sample data: ${data.uploaded.join(", ")}`, sessionId: data.session_id };
+    } catch (e) {
+      setError(errorMessage(e));
+      return null;
+    } finally {
+      setUploading(false);
+      settle();
+    }
+  }, [sessionId, adopt, patch, settle]);
 
   /** Add a CSV from a link. Same result shape as upload(). */
   const uploadUrl = useCallback(
     async (url: string): Promise<{ note: string; sessionId: string } | null> => {
       setUploading(true);
       setError(null);
+      const label = url.trim().replace(/^https?:\/\//, "").slice(0, 60);
+      setProgress([{ name: label, stage: "reading" }]); // the server downloads and cleans in one step
       try {
         const data = await uploadFromUrl(url.trim(), sessionId);
+        const name = data.uploaded[0] ?? label;
+        setProgress([{ name, stage: "ready", rows: data.files.find((f) => f.file_name === name)?.row_count }]);
+        settle();
         setSessionId(data.session_id);
         localStorage.setItem(SESSION_KEY, data.session_id);
         apply(data);
         return { note: `Uploaded from link: ${data.uploaded.join(", ")}`, sessionId: data.session_id };
       } catch (e) {
+        setProgress([]);
         setError(errorMessage(e));
         return null;
       } finally {
         setUploading(false);
       }
     },
-    [sessionId, apply],
+    [sessionId, apply, settle],
   );
 
   /** Remove one uploaded file from the current session. Resolves to a note for the chat, or null on failure. */
@@ -135,7 +200,7 @@ export function useFiles() {
   );
 
   return {
-    sessionId, files, relationships, starters, uploading, error, ready, uploadUrl, remove,
+    sessionId, files, relationships, starters, uploading, error, ready, progress, uploadUrl, remove, loadSample,
     dismissError: () => setError(null),
     upload, openSession, startNewSession,
   };

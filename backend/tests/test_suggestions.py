@@ -23,7 +23,8 @@ def test_questions_come_from_links_dates_and_categories(tmp_path):
 
 
 def test_single_plain_table_still_gets_a_question(tmp_path):
-    assert build(tmp_path, {"notes": "amount\n5\n7\n"}) == ["Give me an overview of notes."]
+    qs = build(tmp_path, {"notes": "amount\n5\n7\n"})
+    assert qs[0] == "Give me an overview of notes." and "Show the top 5 notes by amount." in qs and len(qs) <= 4
 
 
 def test_missing_values_are_offered(tmp_path):

@@ -1,5 +1,6 @@
 import type { CellValue } from "@/lib/api";
 import { loadPlotly, type Figure } from "./plotly/loadPlotly";
+import type { ChartTheme } from "./plotly/theme";
 
 /** "Top 5 categories by revenue" -> "top-5-categories-by-revenue" */
 export function fileSlug(title: string): string {
@@ -38,10 +39,10 @@ export function downloadCsv(columns: string[], rows: CellValue[][], title: strin
 const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
- * Renders the figure again, off screen, with its title on a white background, and saves it as a PNG
+ * Renders the figure again, off screen, with its title on the panel colour, and saves it as a PNG
  * at twice the size (sharp when zoomed). Works for the 3D charts too.
  */
-export async function downloadPng(figure: Figure, title: string, width: number, height: number) {
+export async function downloadPng(figure: Figure, title: string, width: number, height: number, theme: ChartTheme) {
   const Plotly = await loadPlotly();
   const total = height + 56;
   const host = document.createElement("div");
@@ -54,8 +55,8 @@ export async function downloadPng(figure: Figure, title: string, width: number, 
       width,
       height: total,
       margin,
-      paper_bgcolor: "#ffffff",
-      title: { text: `<b>${escapeHtml(title)}</b>`, x: 0.02, xanchor: "left", y: 0.98, yanchor: "top", font: { size: 16, color: "#1f2347" } },
+      paper_bgcolor: theme.panel, // the image matches the theme it was downloaded from
+      title: { text: escapeHtml(title), x: 0.02, xanchor: "left", y: 0.98, yanchor: "top", font: { size: 20, color: theme.text, family: theme.serif } },
     };
     await Plotly.newPlot(host, figure.data, layout, { staticPlot: true });
     const url = await Plotly.toImage(host, { format: "png", width, height: total, scale: 2 });

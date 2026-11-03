@@ -100,7 +100,7 @@ export type ChatClarification = { type: "clarification"; question: string };
 export type ChatResponse = ChatAnswer | ChatClarification;
 
 /** The stages the backend reports while it works on one question. */
-export type ChatStep = "understanding" | "running" | "writing";
+export type ChatStep = "reading" | "querying" | "running" | "explaining";
 type StreamEvent =
   | { type: "step"; step: ChatStep }
   | { type: "result"; data: ChatResponse }
@@ -200,6 +200,59 @@ export function uploadFiles(files: File[], sessionId: string | null): Promise<Up
   return request<UploadResponse>("/files", { method: "POST", body: form });
 }
 
+/**
+ * Upload one file, reporting how much of it has been sent (0..1). Uses XMLHttpRequest because fetch
+ * can't report upload progress.
+ */
+export function uploadOne(file: File, sessionId: string | null, onProgress: (sent: number) => void): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    if (sessionId) form.append("session_id", sessionId);
+    form.append("files", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/files`);
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.upload.onload = () => onProgress(1);
+    xhr.onerror = () => reject(interrupted());
+    xhr.onload = async () => {
+      const res = new Response(xhr.responseText, { status: xhr.status, headers: { "Content-Type": "application/json" } });
+      if (res.ok) resolve((await res.json()) as UploadResponse);
+      else reject(await toApiError(res));
+    };
+    xhr.send(form);
+  });
+}
+
+export type SampleEvent =
+  | { type: "start"; session_id: string; files: string[] }
+  | { type: "file"; name: string; stage: "reading" | "cleaning" | "ready" | "error"; rows?: number; reason?: string }
+  | { type: "result"; data: UploadResponse }
+  | { type: "error"; status: number; message: string };
+
+/** Load the bundled "Online Shop 2024" sample files, reporting each file's progress as it happens. */
+export async function loadSample(sessionId: string | null, onEvent: (e: SampleEvent) => void): Promise<UploadResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/files/sample`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+  } catch {
+    throw interrupted();
+  }
+  if (!res.ok) throw await toApiError(res);
+  let result: UploadResponse | null = null;
+  await readNdjson(res, undefined, (raw) => {
+    const event = raw as SampleEvent;
+    if (event.type === "error") throw new ApiError(event.status >= 500 ? "server" : "client", event.message);
+    if (event.type === "result") result = event.data;
+    onEvent(event);
+  });
+  if (!result) throw new ApiError("server", "Loading the sample data was cut off. Please try again.");
+  return result;
+}
+
 /** Add a CSV from a link: a direct URL, or a Google Drive / Sheets, Dropbox or GitHub share link. */
 export function uploadFromUrl(url: string, sessionId: string | null): Promise<UploadResponse> {
   return request<UploadResponse>("/files/url", {
@@ -232,6 +285,33 @@ export async function getFiles(sessionId: string): Promise<SessionFiles | null> 
   }
 }
 
+/** Read a newline-delimited JSON stream, calling `handle` for each object. */
+async function readNdjson(res: Response, signal: AbortSignal | undefined, handle: (event: unknown) => void): Promise<void> {
+  if (!res.body) throw new ApiError("server", "The server sent an empty reply. Please try again.");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (line) handle(JSON.parse(line));
+      }
+    }
+    if (buffer.trim()) handle(JSON.parse(buffer.trim()));
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    throw interrupted(signal);
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
 /**
  * Ask a question. The backend streams its progress, so `onStep` fires as each stage starts.
  * Pass an AbortSignal to stop waiting: the request is cancelled and the backend does no further work.
@@ -253,37 +333,13 @@ export async function sendChat(
   }
   if (!res.ok || !res.body) throw await toApiError(res);
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let result: ChatResponse | null = null;
-
-  const handle = (line: string) => {
-    const event = JSON.parse(line) as StreamEvent;
+  await readNdjson(res, opts.signal, (raw) => {
+    const event = raw as StreamEvent;
     if (event.type === "step") opts.onStep?.(event.step);
     else if (event.type === "result") result = event.data;
     else throw new ApiError(event.status >= 500 ? "server" : "client", event.message, event.code);
-  };
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, newline).trim();
-        buffer = buffer.slice(newline + 1);
-        if (line) handle(line);
-      }
-    }
-    if (buffer.trim()) handle(buffer.trim());
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw interrupted(opts.signal);
-  } finally {
-    reader.cancel().catch(() => {});
-  }
+  });
 
   if (!result) throw new ApiError("server", "The answer was cut off before it finished. Please try again.");
   return result;
