@@ -342,15 +342,19 @@ h1, h2, h3, .font-display {
 @utility bubble {
   background: var(--bubble);
   border-radius: 20px;
+  overflow-wrap: anywhere; /* a long word or link wraps instead of running out of the bubble */
 }
 
-/* The AI's messages: a card with a border, so they stand apart from the chat background and your bubbles. */
+/* The AI's messages: a card with a border, so they stand apart from the chat background and your bubbles.
+   Long runs with no normal space (a link, or numbers joined by the model's no-break spaces) wrap inside it. */
 @utility reply-card {
   background: var(--reply);
   border: 1px solid var(--border);
   border-radius: 20px;
   border-bottom-left-radius: 6px;
   box-shadow: var(--shadow);
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 /* The chip of the answer (or the table) shown in results. */

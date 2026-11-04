@@ -44,6 +44,7 @@ class FakeClient:
 
     def _create(self, **kwargs):
         self.calls += 1
+        self.last = kwargs  # what was sent, for tests that check the prompt's data
         item = self.script.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -126,6 +127,40 @@ def test_schema_description_has_types_values_and_ranges():
 def test_explain_result_returns_text():
     client = FakeClient(["  Revenue was highest in March.  "])
     assert llm.explain_result("q", ["m", "r"], [["Mar", 5]], 1, False, client=client) == "Revenue was highest in March."
+
+
+def sent_payload(client) -> dict:
+    """The JSON the explainer was given (inside the <<<DATA>>> fence of the user message)."""
+    text = client.last["messages"][1]["content"]
+    return json.loads(text.split(llm.DATA_START, 1)[1].rsplit(llm.DATA_END, 1)[0])
+
+
+def test_explainer_seeing_30_of_50_rows_is_not_told_the_result_is_partial():
+    """50 rows came back and the user sees all of them; the model only reads 30. That isn't "incomplete"."""
+    client = FakeClient(["ok"])
+    rows = [[f"p{i}", i] for i in range(50)]
+    llm.explain_result("break this down by category", ["product", "n"], rows, 50, False, client=client)
+    payload = sent_payload(client)
+    assert payload["truncated"] is False and payload["row_count"] == 50
+    assert len(payload["first_rows"]) == 30 and "rows_shown" not in payload
+
+
+def test_explainer_is_told_when_the_query_hit_its_row_limit():
+    client = FakeClient(["ok"])
+    llm.explain_result("q", ["n"], [[1]] * 40, 40, True, client=client)
+    assert sent_payload(client)["truncated"] is True
+
+
+def test_explanation_no_break_spaces_become_normal_spaces():
+    """gpt-oss writes U+202F around numbers; left in, a long line can't wrap and runs out of the card."""
+    client = FakeClient(["Total = 413 + 411 and more"])
+    assert llm.explain_result("q", ["n"], [[1]], 1, False, client=client) == "Total = 413 + 411 and more"
+
+
+def test_prompts_forbid_hand_made_sums_and_say_how_to_break_down():
+    assert "Never do arithmetic yourself" in llm.EXPLAIN_PROMPT
+    assert "never call the answer incomplete" in llm.EXPLAIN_PROMPT and "name at most 5 items" in llm.EXPLAIN_PROMPT
+    assert "break this down by X" in llm.PLAN_PROMPT and "GROUP BY X only" in llm.PLAN_PROMPT
 
 
 def limit(headers):

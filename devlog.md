@@ -364,3 +364,25 @@
 - **Docker:** `docker compose up --build` built and started both services with no changes needed. Tested on ports 3200/8200 through a small override file, because the dev servers were on 3000/8000. Loading the sample data and asking "Show monthly revenue in 2024" gave a line chart and a bullet-list answer inside Docker. The README now says to stop the dev servers first.
 - **README:** covers the three panels, the Results thread and Tables, renaming and deleting chats, `/chat/<id>`, effort, white chart cards, light and dark mode, markdown, short answers in code, 429 waiting, mixed dates, the new API endpoints, `GROQ_FALLBACK_API_KEY` (also in `.env.example`) and the PostCSS setup. Two screenshots are in `docs/screenshots/` (light and dark).
 - **Tests:** 174 backend tests pass (33 new or rewritten). Lint, types and build pass.
+
+### 23. Replies spilling out of the card, answers adding numbers by hand
+**You:** Pasted an answer to "Break this down by category" that said "The data shown lists 30 of the 50 rows, so the totals below are incomplete" and added numbers by hand ("473 + 440 + … = 7,226"). The screenshot showed the Electronics sum running out of the white answer card. Then: "the reply chats are going out of the boxes".
+
+**Claude:**
+- **Why it spilled out:** gpt-oss puts U+202F, a narrow space that can't break a line, around numbers and signs (60 of them in that answer). The browser saw the whole sum as one long word, so it couldn't wrap.
+- **Fix (frontend):**
+  - `reply-card` and `bubble` in `globals.css` now have `overflow-wrap: anywhere`. Nothing can run out of an AI card or your own bubble any more.
+  - `Markdown.tsx` turns no-break spaces (U+00A0, U+2007, U+2009, U+202F) into normal spaces, so lines wrap between words. This also fixes answers already saved in history.
+  - Checked in the browser on the old answer: 0 of 6 cards overflow, in light and dark mode.
+- **Why the answer was wrong:**
+  - The SQL grouped by category *and* product (50 rows).
+  - The explainer only reads the first 30 rows, and was told the result was "truncated" whenever there were more than 30. So it called the answer incomplete and added numbers itself.
+- **Fix (backend, `chatapp/llm.py`):**
+  - The explainer now gets `row_count` (the size of the whole result, which the user sees in full) and `first_rows` (at most 30). `truncated` now means only that the query hit its own row limit.
+  - `EXPLAIN_PROMPT`: never do arithmetic or write "a + b + c" sums. Talk about the whole result and never about how many rows were given. Never call the answer incomplete because only some rows are visible. Above 5 rows, name at most 5 and say the full list is in the table.
+  - The explanation's no-break spaces are turned into normal spaces before saving.
+  - `PLAN_PROMPT`: "break this down by X", "by X" or "per X" means one row per X (GROUP BY X only, with the same measure). Totals always come from SQL.
+- **Checked live** (in a throwaway session on the sample data, deleted afterwards):
+  - "Which products have the most order items?" then "Break this down by category" now gives 4 rows (Electronics 7,198, Home & Kitchen 5,277, Accessories 4,631, Furniture 2,894) with a bar chart. Got the same result on two more runs.
+  - A 500-row product list gets a short answer that points to the table, with no "30 shown" and no sums.
+- **Tests:** 178 backend tests pass (4 new in `tests/test_llm.py`). Lint, types and build pass.

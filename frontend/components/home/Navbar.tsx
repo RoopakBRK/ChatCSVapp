@@ -27,9 +27,6 @@ export default function Navbar() {
         </ul>
         <div className="flex items-center gap-2">
           <LoginButton />
-          <Link href="/chat" className="btn-accent hidden rounded-full px-5 py-2 text-sm font-semibold depth-2 sm:block">
-            Open app
-          </Link>
         </div>
       </nav>
     </header>

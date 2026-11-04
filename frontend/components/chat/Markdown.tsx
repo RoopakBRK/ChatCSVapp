@@ -13,10 +13,13 @@ type Block = { kind: "p"; lines: string[] } | { kind: "ul" | "ol"; items: string
 
 const BULLET = /^\s*[-*•]\s+(.*)$/;
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
+/** Spaces a line can't break at (the model puts U+202F around numbers: "413 + 411"). As normal spaces,
+    a long line wraps between the words instead of running out of the card. */
+const NO_BREAK_SPACES = /[    ]/g;
 
 function blocks(text: string): ReactNode[] {
   const out: Block[] = [];
-  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+  for (const line of text.replace(/\r\n?/g, "\n").replace(NO_BREAK_SPACES, " ").split("\n")) {
     const bullet = BULLET.exec(line);
     const numbered = bullet ? null : NUMBERED.exec(line);
     const last = out[out.length - 1];
