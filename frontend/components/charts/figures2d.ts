@@ -58,7 +58,17 @@ function layout(c: FigureContext, t: ChartTheme, height: number, extra: Record<s
   return base(t, height, { margin: { l: 64, r: 18, t: 12, b: 56 }, xaxis: xAxis(c, t), yaxis: yAxis(c, t), ...extra });
 }
 
-/** Bars in the accent colour with slightly rounded tops. */
+/** Space between bars: with only a few bars they would be huge blocks, so they get slimmer the fewer
+    there are (a gap of 0.75 leaves each bar a quarter of its slot). Works for category and date axes. */
+function barGap(n: number): number {
+  if (n <= 2) return 0.75;
+  if (n <= 4) return 0.65;
+  if (n <= 8) return 0.55;
+  if (n <= 20) return 0.45;
+  return 0.3;
+}
+
+/** Slim bars in the accent colour with slightly rounded tops. */
 export function barFigure(c: FigureContext, height: number, t: ChartTheme): Figure {
   const bars = {
     type: "bar",
@@ -70,7 +80,7 @@ export function barFigure(c: FigureContext, height: number, t: ChartTheme): Figu
     hovertemplate: hover(c),
     marker: { color: one(t), line: { width: 0 } },
   };
-  return { data: [bars], layout: layout(c, t, height, { barcornerradius: 4, bargap: 0.3 }) };
+  return { data: [bars], layout: layout(c, t, height, { barcornerradius: 4, bargap: barGap(c.x.length) }) };
 }
 
 /** A smooth accent line over a light fill. */

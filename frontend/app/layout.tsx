@@ -13,7 +13,6 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // data-theme is set before paint by the script below, so React must not complain that it differs.
     <html
       lang="en"
       suppressHydrationWarning

@@ -38,9 +38,6 @@ export default function Hero() {
           <Link href="/chat" className="btn-accent rounded-full px-8 py-3.5 text-base font-semibold depth-2 transition-transform hover:scale-[1.03]">
             Chat with CSV
           </Link>
-          <a href="#how" className="rounded-full border border-border bg-card px-6 py-3.5 text-base font-semibold depth hover:border-accent hover:bg-accent-soft">
-            See how it works
-          </a>
         </div>
       </div>
       <Preview />

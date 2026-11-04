@@ -79,5 +79,10 @@ export function useChats() {
   }, []);
 
   const remove = useCallback((id: string) => write(read().filter((c) => c.id !== id)), []);
-  return { chats, save: saveChat, remove };
+  /** Give a chat your own name (blank keeps the old one). Its place in the list doesn't change. */
+  const rename = useCallback((id: string, title: string) => {
+    const name = title.trim().slice(0, 80);
+    if (name) saveChat(id, { title: name });
+  }, []);
+  return { chats, save: saveChat, remove, rename };
 }

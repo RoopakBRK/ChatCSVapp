@@ -71,7 +71,7 @@ export default function ResultChart({ answer, kind, onKind }: Props) {
   };
 
   return (
-    <div ref={block} className="chart-block flex flex-col">
+    <div ref={block} className="chart-block light-surface flex flex-col rounded-lg p-3">
       <div ref={stage} className={fullscreen ? "min-h-0 flex-1" : "h-80"}>
         {current === "table" ? (
           <ChartTable columns={answer.columns} rows={answer.rows} height={height} />

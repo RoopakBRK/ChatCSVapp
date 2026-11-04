@@ -174,8 +174,9 @@ def _parse_dates(s: pd.Series, fmt: str) -> pd.Series:
     return pd.to_datetime(s, format=fmt, errors="coerce")
 
 
-def _detect_type(col: str, s: pd.Series, steps: list[CleaningStep]) -> tuple[str, str]:
-    """Returns (duckdb_type, cast_sql). s holds the non-null text values."""
+def _detect_type(col: str, s: pd.Series, steps: list[CleaningStep]) -> tuple:
+    """Returns (duckdb_type, cast_sql) or, for mixed date formats, (type, cast_sql, rewritten values).
+    s holds the non-null text values."""
     text = ("VARCHAR", "{col}")
     if s.empty:
         steps.append(CleaningStep(action="flag_empty_column", column=col, count=0, changes_data=False,
@@ -232,7 +233,89 @@ def _detect_type(col: str, s: pd.Series, steps: list[CleaningStep]) -> tuple[str
                 steps.append(CleaningStep(
                     action="kept_as_text", column=col, count=len(s), changes_data=False,
                     detail="Dates could be day/month or month/day; kept as text instead of guessing."))
-    return text
+                return text
+
+    return _mixed_dates(col, s, steps) or text
+
+
+DATE_LIKE_SHARE = 0.8  # a column this date-like that can't become DATE gets a note saying why
+
+
+def _mixed_dates(col: str, s: pd.Series, steps: list[CleaningStep]):
+    """Dates in more than one format (2024-01-05 and 05/04/2024), or date-like text that can't convert.
+
+    Every value whose meaning is clear is written as YYYY-MM-DD. If all of them are clear the column
+    becomes DATE; otherwise it stays text and a step says why. Day/month order for 05/04/2024-style
+    values is settled per column: if any value only works one way (25/04/2024), that order is used.
+    Returns (type, cast_sql, rewritten values) or None when the column isn't date-like."""
+    iso = s.str.fullmatch(_ISO_DATE)
+    ymd = s.str.fullmatch(_YMD_SLASH)
+    dm = s.str.fullmatch(_DMY_OR_MDY)
+    like = iso | ymd | dm
+    if like.mean() < DATE_LIKE_SHARE:
+        return None
+    if not like.all():
+        bad = s[~like]
+        steps.append(CleaningStep(
+            action="kept_as_text", column=col, count=len(bad), changes_data=False,
+            detail=f"{like.mean():.0%} of values look like dates but {len(bad)} {'does' if len(bad) == 1 else 'do'} not "
+                   f"(e.g. {', '.join(repr(v) for v in bad.unique()[:3])}); kept as text instead of guessing."))
+        return "VARCHAR", "{col}", None
+
+    parsed = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    parsed[iso] = _parse_dates(s[iso], "%Y-%m-%d")
+    parsed[ymd] = _parse_dates(s[ymd], "%Y/%m/%d")
+    ambiguous = pd.Series(False, index=s.index)
+    reason = ""
+    if dm.any():
+        parts = s[dm].str.replace(r"[.-]", "/", regex=True)
+        first = parts.str.split("/").str[0].astype(int)
+        second = parts.str.split("/").str[1].astype(int)
+        day_first = (first > 12) & (second <= 12)  # 25/04/2024: only day/month works
+        month_first = (second > 12) & (first <= 12)  # 04/25/2024: only month/day works
+        dmy = _parse_dates(parts, "%d/%m/%Y")
+        mdy = _parse_dates(parts, "%m/%d/%Y")
+        if day_first.any() and not month_first.any():
+            parsed[dm] = dmy
+            reason = f"; dates like {s[dm][day_first].iloc[0]} only work day first, so day/month order is used"
+        elif month_first.any() and not day_first.any():
+            parsed[dm] = mdy
+            reason = f"; dates like {s[dm][month_first].iloc[0]} only work month first, so month/day order is used"
+        else:  # no evidence (or both orders appear): only values with one possible reading are clear
+            same = first == second  # 05/05/2024 reads the same either way
+            parsed[dm] = dmy.where(day_first | same, mdy.where(month_first))
+            ambiguous[dm] = ~(day_first | month_first | same)
+    invalid = parsed.isna() & ~ambiguous  # the right shape but not a real date (2024-02-30)
+    clear = parsed.notna()
+    rewritten = s.where(~clear, parsed.dt.strftime("%Y-%m-%d"))
+    formats = len({k for k, m in (("iso", iso), ("ymd", ymd), ("dm", dm)) if m.any()})
+    examples = ", ".join(s[m].iloc[0] for m in (iso, ymd, dm) if m.any())
+
+    if not ambiguous.any() and not invalid.any():
+        detail = "text -> DATE"
+        if formats > 1:
+            detail += f" (mixed date formats such as {examples}, all read as YYYY-MM-DD{reason})"
+        elif reason:
+            detail += f" ({reason.lstrip('; ')})"
+        steps.append(CleaningStep(action="convert_type", column=col, count=len(s), changes_data=True, detail=detail))
+        return "DATE", "CAST({col} AS DATE)", rewritten
+
+    why = []
+    if ambiguous.any():
+        ex = s[ambiguous].iloc[0]
+        n = int(ambiguous.sum())
+        why.append(f"{n} value{'s' if n != 1 else ''} like {ex} could be day/month or month/day")
+    if invalid.any():
+        n = int(invalid.sum())
+        why.append(f"{n} {'is not a real date' if n == 1 else 'are not real dates'} "
+                   f"(e.g. {', '.join(repr(v) for v in s[invalid].unique()[:3])})")
+    changed = int((rewritten != s).sum())
+    note = f"; the {int(clear.sum())} clear dates were written as YYYY-MM-DD" if changed else ""
+    steps.append(CleaningStep(
+        action="kept_as_text", column=col, count=int(ambiguous.sum() + invalid.sum()), changes_data=bool(changed),
+        detail=("Mixed date formats" if formats > 1 else "Looks like dates") + f" ({examples}), but "
+               + " and ".join(why) + f"; kept as text instead of guessing{note}."))
+    return "VARCHAR", "{col}", rewritten if changed else None
 
 
 def clean_csv(path: Path) -> CleanResult:
@@ -248,7 +331,9 @@ def clean_csv(path: Path) -> CleanResult:
 
     plans = []
     for col in df.columns:
-        sql_type, cast_sql = _detect_type(col, df[col].dropna(), steps)
+        sql_type, cast_sql, *rewritten = _detect_type(col, df[col].dropna(), steps)
+        if rewritten and rewritten[0] is not None:  # mixed date formats written the same way
+            df.loc[rewritten[0].index, col] = rewritten[0]
         plans.append(ColumnPlan(col, originals[col], sql_type, cast_sql))
 
     df = df.astype(object).where(df.notna(), None)

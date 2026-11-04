@@ -36,7 +36,8 @@ def test_answer_with_chart(setup, monkeypatch):
     client, sid = setup
     monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan())
     body = ask(client, sid).json()
-    assert body["type"] == "answer" and body["explanation"] == "Ann spent the most."
+    # Two labelled numbers: written in code, so the explain call isn't made.
+    assert body["type"] == "answer" and body["explanation"] == "Revenue by customer:\n- bob: **120**\n- ann: **90**"
     assert body["columns"] == ["customer", "revenue"] and body["rows"][0][0] == "bob"
     assert body["chart"] == {"type": "bar", "x": "customer", "y": "revenue", "title": "Revenue"}
 
@@ -153,6 +154,20 @@ def test_rate_limit_message(setup, monkeypatch):
     assert r.status_code == 429 and r.json()["detail"]["code"] == "rate_limited"
 
 
+def test_request_to_change_data_gets_a_clear_message(setup, monkeypatch):
+    """"delete all the orders": the model's DELETE is blocked, and the user is told why (not "AI is down")."""
+    client, sid = setup
+
+    def writes(*a, **k):
+        raise llm.LLMError("No valid response after 2 attempts: sql must be a read-only SELECT query (found DELETE)")
+
+    monkeypatch.setattr(llm, "generate_plan", writes)
+    r = ask(client, sid, "delete all the orders")
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "read_only"
+    assert "only read" in r.json()["detail"]["message"]
+
+
 def test_query_reruns_a_saved_answer_by_id(setup, monkeypatch):
     client, sid = setup
     monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan())
@@ -213,7 +228,8 @@ def test_timeout_message_on_plain_chat(setup, monkeypatch):
 def test_deadline_is_passed_to_every_llm_call(setup, monkeypatch):
     client, sid = setup
     seen = []
-    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: (seen.append(k["deadline"]), plan())[1])
+    long_result = plan(sql="SELECT * FROM orders", chart=None)  # 6 rows: too long to write in code
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: (seen.append(k["deadline"]), long_result)[1])
     monkeypatch.setattr(llm, "explain_result", lambda *a, **k: (seen.append(k["deadline"]), "ok")[1])
     assert ask(client, sid).status_code == 200
     assert len(seen) == 2 and seen[0] == seen[1] and seen[0] > 0
@@ -228,3 +244,35 @@ def test_scatter_kept_for_numeric_x_and_downgraded_otherwise(setup, monkeypatch)
     monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan(
         chart={"type": "scatter", "x": "customer", "y": "revenue", "title": "t"}))
     assert ask(client, sid).json()["chart"]["type"] == "bar"
+
+
+def test_effort_reaches_the_model_and_defaults_to_medium(setup, monkeypatch):
+    client, sid = setup
+    seen = []
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: (seen.append(k["effort"]), plan())[1])
+    ask(client, sid)
+    client.post("/chat", json={"message": "q", "session_id": sid, "effort": "high"})
+    assert seen == ["medium", "high"]
+    assert client.post("/chat", json={"message": "q", "session_id": sid, "effort": "max"}).status_code == 422
+
+
+def test_short_results_need_no_second_ai_call(setup, monkeypatch):
+    client, sid = setup
+
+    def explain(*a, **k):
+        raise AssertionError("explain_result should not be called")
+
+    monkeypatch.setattr(llm, "explain_result", explain)
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan(sql="SELECT count(*) AS order_count FROM orders", chart=None))
+    assert ask(client, sid).json()["explanation"] == "Order count: **6**"
+
+
+def test_rate_limit_message_says_how_long_groq_asked_to_wait(setup, monkeypatch):
+    client, sid = setup
+
+    def limited(*a, **k):
+        raise llm.LLMRateLimitError("wait", wait=42.4)
+
+    monkeypatch.setattr(llm, "generate_plan", limited)
+    r = ask(client, sid)
+    assert r.status_code == 429 and "42 s" in r.json()["detail"]["message"]

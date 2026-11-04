@@ -3,7 +3,7 @@ import { formatValue } from "@/lib/format";
 
 export default function SampleTable({ columns, rows }: { columns: ColumnInfo[]; rows: Record<string, CellValue>[] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="light-surface overflow-x-auto rounded-lg p-2">
       <table className="w-full whitespace-nowrap">
         <thead>
           <tr>

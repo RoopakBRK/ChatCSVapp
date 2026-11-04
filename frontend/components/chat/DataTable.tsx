@@ -6,7 +6,7 @@ export default function DataTable({ answer }: { answer: ChatAnswer }) {
   if (answer.rows.length === 0) return <p className="text-ui text-muted">The query returned no rows.</p>;
   return (
     <>
-      <div className="max-h-80 overflow-auto rounded-lg border border-border">
+      <div className="light-surface max-h-80 overflow-auto rounded-lg border border-border">
         <table className="w-full whitespace-nowrap text-ui">
           <thead className="sticky top-0 bg-panel">
             <tr>

@@ -42,7 +42,7 @@ export default function UploadZone({ onFiles, uploading }: Props) {
         ) : (
           <>
             <p className="text-ui font-medium">Drop CSV files or click to choose</p>
-            <p className="text-ui text-muted">Up to 50 MB each</p>
+            <p className="text-ui text-muted">Up to 5 MB each</p>
           </>
         )}
       </div>

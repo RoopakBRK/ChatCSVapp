@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from api.errors import fail
 from chatapp import history, llm
+from chatapp.explain import quick_explanation
 from chatapp.config import settings
 from chatapp.session_db import get_session
 from chatapp.sessions import is_valid_session_id
@@ -80,7 +81,8 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
     try:
         for attempt in range(SQL_ATTEMPTS):
             yield _step("querying")  # the model reads the question and writes the SQL
-            plan = llm.generate_plan(req.message, files, db.relationships, turns, feedback, deadline=deadline)
+            plan = llm.generate_plan(req.message, files, db.relationships, turns, feedback, deadline=deadline,
+                                     effort=req.effort)
             if plan.needs_clarification:
                 question = plan.question or "Could you tell me more about what you need?"
                 _save(req, history.entry("assistant", "clarification", question))
@@ -114,12 +116,14 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
         columns, rows, truncated = result
         chart = check_chart(plan.chart, columns, rows)  # keep the suggested chart only if it fits the data
         yield _step("explaining")
-        try:
-            explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated, deadline=deadline,
-                                             all_rows=is_column_listing(plan.sql, columns))
-        except llm.LLMError:
-            logger.exception("Explanation failed; returning the data without it")
-            explanation = "Here is what I found." if rows else "No rows matched that question."
+        # A single number, a short list or a list of columns is written in code: no second AI call.
+        explanation = quick_explanation(plan.sql, columns, rows, truncated)
+        if explanation is None:
+            try:
+                explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated, deadline=deadline)
+            except llm.LLMError:
+                logger.exception("Explanation failed; returning the data without it")
+                explanation = "Here is what I found." if rows else "No rows matched that question."
     except llm.LLMConfigError as exc:
         logger.error("LLM not configured: %s", exc)
         raise fail(503, "llm_not_configured", "The AI service isn't set up on the server (missing API key).")
@@ -127,9 +131,17 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
         raise fail(504, "timeout", "That took longer than a minute, so I stopped. Try a simpler question, or try again.")
     except llm.LLMRateLimitError as exc:
         logger.warning("LLM rate limited: %s", exc)
+        if exc.wait:
+            secs = max(1, round(exc.wait))
+            raise fail(429, "rate_limited", f"The AI service is busy (rate limit reached). Groq asked us to wait {secs} s, "
+                                            f"which is longer than this question has left. Please try again in {secs} s.")
         raise fail(429, "rate_limited", "The AI service is busy right now (rate limit reached). "
                                         "Please wait a few seconds and try again.")
     except llm.LLMError as exc:
+        if "read-only SELECT" in str(exc):  # the model kept writing SQL that changes data; it was blocked
+            logger.info("Blocked a request to change data: %s", exc)
+            raise fail(422, "read_only", "I can only read and analyse your files, not change them. "
+                                         "Try asking a question about the data instead.")
         logger.error("LLM failed: %s", exc)
         raise fail(502, "llm_unavailable", "The AI service didn't respond properly. Please try again in a moment.")
 
@@ -147,12 +159,6 @@ def _save(req: ChatRequest, reply: dict) -> None:
     """Save the question with its reply. Only answered questions are saved: a failed or stopped one is
     not, so asking it again never puts it in the model's history twice."""
     history.append(req.session_id, history.entry("user", "question", req.message), reply)
-
-
-def is_column_listing(sql: str, columns: list[str]) -> bool:
-    """A list of columns (from _columns or information_schema): the model must see every row of it."""
-    s = sql.lower()
-    return "_columns" in s or "information_schema" in s or {"column_name"} <= {c.lower() for c in columns}
 
 
 def answer_question(req: ChatRequest) -> ChatResponse:

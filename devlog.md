@@ -326,3 +326,41 @@
   - Dark mode is now neutral grey (#141414 / #1b1b1b / #232323, text #ededed, muted #a8a8a8) with the same indigo accent.
   - Light-mode secondary text is darker.
 - **Tests:** 141 backend tests pass (20 new). Lint, types and build pass.
+
+### 22. Effort picker, /chat/<id> addresses, waiting out 429s, fewer AI calls, mixed dates, Tailwind via PostCSS, markdown, Docker, README
+**You:** A Log out button in Settings (a dummy that does nothing); an effort popup (Low/Medium/High, default Medium) in the question box; each chat at /chat/<session-id>; when Groq says "busy" (429), wait as long as it asks and retry within the 60 s limit; write short answers in code instead of a second AI call; convert clear values in columns with mixed date formats and note why when one stays text; check whether the @tailwindcss/turbopack loader serves stale CSS and switch to the standard Tailwind setup without changing the look; render simple markdown; run docker compose and check the sample data plus one question inside Docker; update the README with a light and a dark screenshot.
+
+**Claude:**
+- **Log out:** a "Log out" button at the bottom of Settings. It does nothing (no accounts yet).
+- **Effort:**
+  - A "Medium ▾" pill next to the mic opens Low / Medium / High with a hint each. The choice is kept in the browser.
+  - `/chat` takes `effort` and passes it to Groq as `reasoning_effort` for the SQL-writing call. Medium was already the model's default.
+  - High effort thinks longer. It first came back as Groq `400 json_validate_failed` because the 2,048-token budget ran out before the JSON. High now gets 6,144 tokens, and that error is retried once with feedback, like any invalid reply.
+- **/chat/<session id>:**
+  - `/chat` and `/chat/<id>` are one route (`app/chat/[[...session]]`). The page moved to `components/chat/ChatApp.tsx` and sits in Suspense, which Next 16 needs for `usePathname` with cacheComponents.
+  - The address picks the chat. The sidebar, New chat and ⌘K push an address and the chat follows it. The first upload replaces `/chat` with `/chat/<id>`. Back and Forward switch chats without a reload. Plain `/chat` reopens the last chat.
+  - A missing chat's address shows "That chat no longer exists".
+- **429s:** each key gets a "free again at" time from `retry-after` (or `x-ratelimit-reset-*`). The next try uses whichever key is free soonest and sleeps until then, with no 10 s cap and without using up the normal retries. If Groq asks for longer than the question has left (keeping 3 s for the call), it stops at once and says "Groq asked us to wait N s… try again in N s".
+- **Fewer AI calls** (`chatapp/explain.py`): the explanation is written in code for:
+  - no rows
+  - a single value ("Order count: **15,000**")
+  - one row with up to 4 values
+  - up to 5 labelled numbers
+  - a short list
+  - lists of columns, which show every column with its original header and type
+
+  This replaced the earlier "send every row of a column list to the model" path. The explain prompt now allows bold and bullet lists.
+- **Mixed dates** (`cleaning.py`):
+  - **All clear:** if every value's meaning is clear, the column is rewritten to YYYY-MM-DD and becomes DATE. The step says which value settled day/month order.
+  - **Some unclear:** if some values could be either order, the column stays text, the clear values are rewritten, and a `kept_as_text` step says how many are unclear. The model sees this note too.
+  - **Odd values:** date-like columns with stray text (TBD) or impossible dates (2024-02-30) now get a note instead of silently staying text.
+- **Stale stylesheet: confirmed and fixed.**
+  - **How I reproduced it:** in a copy of the frontend running `next dev`, three quick saves of `globals.css` 200 ms apart left the server serving the second value forever (file `--probe-b: 33`, served `22`).
+  - **Why:** the loader keeps a compiler per file and picks an incremental or full rebuild by comparing modification times. Quick saves let it record a newer time against older content, so later runs think nothing changed.
+  - **The fix:** switched to the standard setup from the Next docs (`11-css.md`): `postcss.config.mjs` with `@tailwindcss/postcss`, and the `turbopack.rules` block removed. `@tailwindcss/turbopack` was swapped for `@tailwindcss/postcss`.
+  - **Checked:** the same test then served every value straight away, five rounds plus saves 50 ms apart.
+  - **Look unchanged:** with the same Tailwind version the production CSS was byte-for-byte identical (44,784 bytes). The install picked up the 4.3.4 patch, which only rewrites a few selectors into equivalent forms.
+- **Markdown** (`components/chat/Markdown.tsx`, no library): **bold**, *italic*, `code`, "- " and "1. " lists, paragraphs and line breaks. It builds React elements only. It's used for answers (also while they reveal), replies and clarifying questions.
+- **Docker:** `docker compose up --build` built and started both services with no changes needed. Tested on ports 3200/8200 through a small override file, because the dev servers were on 3000/8000. Loading the sample data and asking "Show monthly revenue in 2024" gave a line chart and a bullet-list answer inside Docker. The README now says to stop the dev servers first.
+- **README:** covers the three panels, the Results thread and Tables, renaming and deleting chats, `/chat/<id>`, effort, white chart cards, light and dark mode, markdown, short answers in code, 429 waiting, mixed dates, the new API endpoints, `GROQ_FALLBACK_API_KEY` (also in `.env.example`) and the PostCSS setup. Two screenshots are in `docs/screenshots/` (light and dark).
+- **Tests:** 174 backend tests pass (33 new or rewritten). Lint, types and build pass.

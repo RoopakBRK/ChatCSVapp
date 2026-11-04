@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Markdown from "./Markdown";
 
 /**
- * Shows text word by word over about a second. Off when `animate` is false (restored history)
- * or when the system asks for reduced motion.
+ * Shows the AI's text word by word over about a second, with simple markdown (bold, lists, line
+ * breaks). Off when `animate` is false (restored history) or when the system asks for reduced motion.
  */
 export default function RevealText({ text, animate, className }: { text: string; animate: boolean; className?: string }) {
   const words = text.split(/(\s+)/); // keep the spaces (and line breaks) as their own pieces
@@ -26,9 +27,10 @@ export default function RevealText({ text, animate, className }: { text: string;
     return () => clearInterval(id);
   }, [animate, words.length]);
 
+  const done = shown >= words.length;
   return (
-    <p className={className} aria-label={text}>
-      <span aria-hidden={shown < words.length}>{words.slice(0, shown).join("")}</span>
-    </p>
+    <div aria-busy={!done} aria-live="off">
+      <Markdown text={done ? text : words.slice(0, shown).join("")} className={className} />
+    </div>
   );
 }

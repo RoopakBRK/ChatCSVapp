@@ -1,4 +1,4 @@
-"""Every setting in one place, read from the environment (and backend/.env if present).
+"""Every setting in one place, read from the environment (and the root .env, or backend/.env, if present).
 
     GROQ_API_KEY                  the AI service key (never logged or returned)
     GROQ_FALLBACK_API_KEY         a second key, used when the first is rate limited, refused or down
@@ -26,7 +26,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-load_dotenv(BACKEND_DIR / ".env")  # values already in the environment win
+# The one settings file is .env at the project root; backend/.env still works as a fallback.
+# Values already in the environment (e.g. from docker compose) always win.
+load_dotenv(BACKEND_DIR.parent / ".env")
+load_dotenv(BACKEND_DIR / ".env")
 
 
 def _float(name: str, default: float) -> float:

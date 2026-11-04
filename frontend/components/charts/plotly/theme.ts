@@ -27,12 +27,17 @@ const FALLBACK: ChartTheme = {
   tooltipBg: "rgba(18,26,46,0.94)", tooltipText: "#e8ecf5", tooltipBorder: "rgba(255,255,255,0.12)",
 };
 
-export function readChartTheme(dark: boolean): ChartTheme {
+/** Charts sit on a white card (.light-surface) in both themes, so they always use the light colours. */
+export function readChartTheme(): ChartTheme {
   if (typeof window === "undefined") return FALLBACK;
-  const css = getComputedStyle(document.documentElement);
+  const probe = document.createElement("div");
+  probe.className = "light-surface";
+  probe.hidden = true;
+  document.body.appendChild(probe);
+  const css = getComputedStyle(probe);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  return {
-    dark,
+  const theme: ChartTheme = {
+    dark: false,
     text: v("--text", FALLBACK.text),
     muted: v("--muted", FALLBACK.muted),
     grid: v("--border", FALLBACK.grid),
@@ -47,12 +52,14 @@ export function readChartTheme(dark: boolean): ChartTheme {
     tooltipText: v("--tooltip-text", FALLBACK.tooltipText),
     tooltipBorder: v("--tooltip-border", FALLBACK.tooltipBorder),
   };
+  probe.remove();
+  return theme;
 }
 
-/** The chart theme for the current light/dark mode; charts redraw when it changes. */
+/** The chart colours (always the light ones; re-read when the theme changes, in case it ever differs). */
 export function useChartTheme(): ChartTheme {
   const theme = useTheme();
-  return useMemo(() => readChartTheme(theme === "dark"), [theme]);
+  return useMemo(() => readChartTheme(), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /* ---------- colour helpers ---------- */

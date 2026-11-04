@@ -3,7 +3,7 @@ import Section from "./Section";
 const FAQS = [
   {
     q: "What files can I use?",
-    a: "CSV files up to 50 MB each, several at a time. Commas, semicolons, tabs and pipes are all recognised. You can upload from your computer, from a direct link, or from a Google Drive, Google Sheets, Dropbox or GitHub share link that anyone with the link can open.",
+    a: "CSV files up to 5 MB each, several at a time. Commas, semicolons, tabs and pipes are all recognised. You can upload from your computer, from a direct link, or from a Google Drive, Google Sheets, Dropbox or GitHub share link that anyone with the link can open.",
   },
   {
     q: "Does CSVChat change my data?",

@@ -9,19 +9,21 @@
  * <html data-theme="light|dark"> before first paint by the script in app/layout.tsx.
  */
 
-/* Day (the original light look: white with soft blue and pink) */
-:root {
+/* Day (the original light look: white with soft blue and pink).
+   .light-surface uses the same colours, so charts and tables stay white in dark mode too. */
+:root,
+.light-surface {
   color-scheme: light;
-  --bg: #ffffff;
+  --bg: #e4e7f2;
   --panel: #ffffff;
   --card: #ffffff;
-  --border: rgba(99, 102, 241, 0.16);
-  --border-strong: rgba(99, 102, 241, 0.3);
-  --text: #1f2347;
-  --muted: #4a4f6e; /* darker than before so secondary text reads clearly on every panel */
-  --accent: #6366f1; /* indigo: borders, tints, active states */
-  --accent-hover: #4f46e5;
-  --accent-ink: #4f46e5; /* indigo for text (6.3:1) */
+  --border: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.24);
+  --text: #0f172a; /* near-black slate: strong contrast on every light surface */
+  --muted: #475569; /* slate, 6:1+ on every light surface */
+  --accent: #4f46e5; /* deeper indigo: borders, tints, active states */
+  --accent-hover: #4338ca;
+  --accent-ink: #4338ca; /* indigo for text (7:1+) */
   --on-accent: #ffffff;
   --teal: #0369a1; /* sky, dark enough for text */
   --success: #047857;
@@ -37,35 +39,22 @@
   --brand-to: #db2777;
   --brand-text-from: #0ea5e9;
   --brand-text-to: #ec4899;
-  /* Page: white with soft sky and pink washes. */
-  --page-bg:
-    radial-gradient(56rem 36rem at -6% -8%, rgba(125, 211, 252, 0.5), transparent 68%),
-    radial-gradient(50rem 34rem at 106% -4%, rgba(249, 168, 212, 0.5), transparent 68%),
-    radial-gradient(48rem 32rem at 104% 106%, rgba(186, 230, 253, 0.46), transparent 68%),
-    radial-gradient(44rem 30rem at -2% 104%, rgba(251, 207, 232, 0.44), transparent 68%),
-    linear-gradient(135deg, #eef8ff 0%, #ffffff 42%, #fff0f8 100%);
-  /* Panels: each tinted with its own soft blue/pink gradient; the chat card a little deeper. */
-  --surface-chat: linear-gradient(160deg, #d9ebfc 0%, #e6e7fc 42%, #f7e0f1 100%);
-  --surface-side: linear-gradient(180deg, rgba(224, 242, 254, 0.92) 0%, rgba(255, 255, 255, 0.9) 48%, rgba(252, 231, 243, 0.92) 100%);
-  --surface-results: linear-gradient(200deg, rgba(252, 231, 243, 0.92) 0%, rgba(255, 255, 255, 0.95) 42%, rgba(224, 242, 254, 0.92) 100%);
-  --focus: #6366f1;
+  /* Page and panels: each area has its own tone, so they don't blend together. */
+  --page-bg: linear-gradient(180deg, #e4e7f2 0%, #e9ebf5 100%);
+  --surface-chat: linear-gradient(180deg, #f6f7fb 0%, #f2f4fa 100%); /* the chat: lightest */
+  --surface-side: linear-gradient(180deg, #e3e6f2 0%, #dfe3f0 100%); /* sidebar: grey-indigo */
+  --surface-results: linear-gradient(180deg, #eef0f7 0%, #eaedf6 100%); /* results panel */
+  --focus: #4f46e5;
   --focus-halo: transparent;
   --tooltip-bg: rgba(255, 255, 255, 0.97);
-  --tooltip-text: #1e1b4b;
-  --tooltip-border: rgba(99, 102, 241, 0.25);
+  --tooltip-text: #0f172a;
+  --tooltip-border: rgba(15, 23, 42, 0.16);
   --drop-glow: rgba(236, 72, 153, 0.2);
-  --shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 2px rgba(30, 27, 75, 0.06),
-    0 10px 24px -10px rgba(79, 70, 229, 0.28),
-    0 22px 40px -28px rgba(236, 72, 153, 0.35);
-  --shadow-2:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 2px 4px rgba(30, 27, 75, 0.08),
-    0 20px 40px -14px rgba(79, 70, 229, 0.32),
-    0 32px 56px -30px rgba(236, 72, 153, 0.4);
-  --scrim: rgba(30, 27, 75, 0.25);
-  --bubble: #e4e6ec; /* your messages: a small neutral grey bubble */
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 4px 14px -4px rgba(15, 23, 42, 0.12);
+  --shadow-2: 0 2px 4px rgba(15, 23, 42, 0.08), 0 16px 32px -12px rgba(15, 23, 42, 0.22);
+  --scrim: rgba(15, 23, 42, 0.35);
+  --bubble: #dfe3f0; /* your messages: a grey-indigo bubble that stands out on the chat area */
+  --reply: #ffffff; /* the AI's messages: a white card with a border and soft shadow */
 
   /* Mixed from the colours above, so they follow the theme automatically. */
   --glass: color-mix(in srgb, var(--panel) 72%, transparent);
@@ -77,7 +66,7 @@
   --glass-blur: blur(14px);
 }
 
-/* Night (neutral dark greys, with the same indigo accent): when the system is dark and nothing was chosen... */
+/* Night (plain black-grey, no blue tint, with the same indigo accent): when the system is dark and nothing was chosen... */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
@@ -103,10 +92,7 @@
     --chart-5: #2dd4bf;
     --brand-text-from: #38bdf8;
     --brand-text-to: #f472b6;
-    --page-bg:
-      radial-gradient(56rem 36rem at -6% -8%, rgba(99, 102, 241, 0.06), transparent 68%),
-      radial-gradient(50rem 34rem at 106% 106%, rgba(236, 72, 153, 0.05), transparent 68%),
-      linear-gradient(135deg, #141414 0%, #171717 50%, #1a1a1a 100%);
+    --page-bg: linear-gradient(135deg, #141414 0%, #171717 50%, #1a1a1a 100%);
     --surface-chat: linear-gradient(160deg, #1e1e1e 0%, #1b1b1b 55%, #1d1c1e 100%);
     --surface-side: linear-gradient(180deg, #171717 0%, #161616 100%);
     --surface-results: linear-gradient(200deg, #191919 0%, #171717 100%);
@@ -120,6 +106,7 @@
     --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 28px 56px -16px rgba(0, 0, 0, 0.9);
     --scrim: rgba(0, 0, 0, 0.5);
     --bubble: rgba(255, 255, 255, 0.09);
+    --reply: #262626;
   }
 }
 
@@ -148,10 +135,7 @@
   --chart-5: #2dd4bf;
   --brand-text-from: #38bdf8;
   --brand-text-to: #f472b6;
-  --page-bg:
-    radial-gradient(56rem 36rem at -6% -8%, rgba(99, 102, 241, 0.06), transparent 68%),
-    radial-gradient(50rem 34rem at 106% 106%, rgba(236, 72, 153, 0.05), transparent 68%),
-    linear-gradient(135deg, #141414 0%, #171717 50%, #1a1a1a 100%);
+  --page-bg: linear-gradient(135deg, #141414 0%, #171717 50%, #1a1a1a 100%);
   --surface-chat: linear-gradient(160deg, #1e1e1e 0%, #1b1b1b 55%, #1d1c1e 100%);
   --surface-side: linear-gradient(180deg, #171717 0%, #161616 100%);
   --surface-results: linear-gradient(200deg, #191919 0%, #171717 100%);
@@ -165,6 +149,7 @@
   --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 28px 56px -16px rgba(0, 0, 0, 0.9);
   --scrim: rgba(0, 0, 0, 0.5);
   --bubble: rgba(255, 255, 255, 0.09);
+  --reply: #262626;
 }
 
 /*
@@ -220,7 +205,7 @@ body {
 html {
   scroll-behavior: smooth;
   background-color: var(--bg);
-  background-image: var(--page-bg); /* white with soft sky and pink washes */
+  background-image: var(--page-bg);
   background-attachment: fixed;
 }
 
@@ -244,6 +229,13 @@ h1, h2, h3, .font-display {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   box-shadow: 0 0 0 5px var(--focus-halo);
+}
+
+/* ...except the question box: its rounded wrapper shows the focus instead, so there is no square
+   outline inside the pill. (Tailwind's outline-none can't override the rule above, which is unlayered.) */
+.no-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 * {
@@ -352,11 +344,26 @@ h1, h2, h3, .font-display {
   border-radius: 20px;
 }
 
+/* The AI's messages: a card with a border, so they stand apart from the chat background and your bubbles. */
+@utility reply-card {
+  background: var(--reply);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  border-bottom-left-radius: 6px;
+  box-shadow: var(--shadow);
+}
+
 /* The chip of the answer (or the table) shown in results. */
 @utility chip-active {
   background: var(--accent-soft);
   border-color: var(--accent);
   font-weight: 500;
+}
+
+/* Charts and tables: a white card with dark text, in both themes. */
+@utility light-surface {
+  background-color: var(--card);
+  color: var(--text);
 }
 
 /* A chart in fullscreen: the panel colour behind it, with room around it. */

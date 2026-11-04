@@ -128,15 +128,65 @@ def test_explain_result_returns_text():
     assert llm.explain_result("q", ["m", "r"], [["Mar", 5]], 1, False, client=client) == "Revenue was highest in March."
 
 
-def test_rate_limit_waits_for_retry_after_then_raises_specific_error(monkeypatch):
+def limit(headers):
+    resp = httpx.Response(429, headers=headers, request=httpx.Request("POST", "x"))
+    return RateLimitError("slow down", response=resp, body=None)
+
+
+def test_rate_limit_waits_as_long_as_groq_asks_then_succeeds(monkeypatch):
     sleeps = []
     monkeypatch.setattr(llm.time, "sleep", sleeps.append)
-    resp = httpx.Response(429, headers={"retry-after": "7"}, request=httpx.Request("POST", "x"))
-    client = FakeClient([RateLimitError("slow down", response=resp, body=None) for _ in range(2)])
+    client = FakeClient([limit({"retry-after": "17"}), limit({"retry-after": "4"}), json.dumps(GOOD)])
+    assert llm.generate_plan("q", FILES, [], client=client, deadline=llm.time.monotonic() + 60).sql
+    assert client.calls == 3 and [round(s) for s in sleeps] == [17, 4]  # no 10 s cap, no retry budget used
+
+
+def test_rate_limit_longer_than_the_time_left_fails_at_once(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(llm.time, "sleep", sleeps.append)
+    client = FakeClient([limit({"retry-after": "30"}), json.dumps(GOOD)])
+    with pytest.raises(llm.LLMRateLimitError) as err:
+        llm.generate_plan("q", FILES, [], client=client, deadline=llm.time.monotonic() + 20)
+    assert client.calls == 1 and sleeps == [] and round(err.value.wait) == 30
+
+
+def test_rate_limit_uses_the_key_that_is_free_soonest(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(llm.time, "sleep", sleeps.append)
+    main = FakeClient([limit({"retry-after": "9"}), json.dumps(GOOD)])
+    backup = FakeClient([limit({"retry-after": "2"}), json.dumps(GOOD)])
+    assert llm.generate_plan("q", FILES, [], client=[main, backup], deadline=llm.time.monotonic() + 60).sql
+    assert (main.calls, backup.calls) == (1, 2) and [round(s) for s in sleeps] == [2]
+
+
+def test_rate_limit_gives_up_after_many_429s():
+    client = FakeClient([limit({"retry-after": "1"})] * llm.MAX_RATE_LIMITS)
     with pytest.raises(llm.LLMRateLimitError):
         llm.generate_plan("q", FILES, [], client=client)
-    assert client.calls == 2
-    assert sleeps[0] == 7.0 and max(sleeps) <= llm.MAX_WAIT_SECONDS  # honours Retry-After, but is capped
+    assert client.calls == llm.MAX_RATE_LIMITS
+
+
+@pytest.mark.parametrize("headers,wait", [
+    ({"retry-after": "3"}, 3.0),
+    ({"x-ratelimit-reset-tokens": "7.66s", "x-ratelimit-remaining-tokens": "0",
+      "x-ratelimit-reset-requests": "2m59.56s", "x-ratelimit-remaining-requests": "12"}, 7.66),
+    ({"x-ratelimit-reset-requests": "1m2s", "x-ratelimit-remaining-requests": "0"}, 62.0),
+    ({"x-ratelimit-reset-tokens": "120ms"}, 0.12),
+    ({}, None),
+])
+def test_rate_limit_wait_comes_from_groqs_headers(headers, wait):
+    got = llm.rate_limit_wait(limit(headers))
+    assert got == wait if wait is None else abs(got - wait) < 1e-6
+
+
+def test_effort_is_sent_as_reasoning_effort():
+    seen = []
+    client = FakeClient([json.dumps(GOOD)] * 2)
+    original = client._create
+    client.chat.completions.create = lambda **kw: (seen.append(kw.get("reasoning_effort")), original(**kw))[1]
+    llm.generate_plan("q", FILES, [], client=client)
+    llm.generate_plan("q", FILES, [], client=client, effort="high")
+    assert seen == ["medium", "high"]
 
 
 def test_deadline_in_the_past_means_no_call():
@@ -171,3 +221,15 @@ def test_invalid_reply_is_corrected_with_feedback_not_repeated():
     assert len(seen) == 2 and len(seen[1]) == len(seen[0]) + 2
     assert "not valid" in seen[1][-1]["content"] and "sql is required" in seen[1][-1]["content"]
     assert seen[1][-2]["role"] == "assistant"
+
+
+def test_json_validate_failed_is_retried_and_high_effort_gets_more_tokens():
+    """Groq answers 400 json_validate_failed when the JSON reply was cut off (e.g. long thinking)."""
+    err = BadRequestError("Error code: 400 - {'error': {'code': 'json_validate_failed'}}",
+                          response=httpx.Response(400, request=httpx.Request("POST", "x")), body=None)
+    seen = []
+    client = FakeClient([err, json.dumps(GOOD)])
+    original = client._create
+    client.chat.completions.create = lambda **kw: (seen.append(kw["max_completion_tokens"]), original(**kw))[1]
+    assert llm.generate_plan("q", FILES, [], client=client, effort="high").sql
+    assert client.calls == 2 and seen[0] == llm.PLAN_TOKENS["high"] > llm.PLAN_TOKENS["medium"]

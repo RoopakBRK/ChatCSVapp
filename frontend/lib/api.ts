@@ -84,7 +84,7 @@ export type ChartType = "bar" | "line" | "pie" | "scatter";
 export type ChartSpec = { type: ChartType; x: string; y: string; title: string };
 
 /** Earlier messages are read from the session's saved history on the server, never sent from here. */
-export type ChatRequest = { message: string; session_id: string };
+export type ChatRequest = { message: string; session_id: string; effort?: "low" | "medium" | "high" };
 
 export type ChatAnswer = {
   type: "answer";

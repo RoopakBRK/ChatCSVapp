@@ -133,36 +133,23 @@ def test_plain_type_names(t, plain):
     assert session_db.plain_type(t) == plain
 
 
-def test_column_lists_show_the_model_every_row(client, monkeypatch):
-    seen = {}
-    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan(sql="SELECT column_name, original_header, type FROM _columns"))
-    monkeypatch.setattr(llm, "explain_result", lambda *a, **k: (seen.update(k), "cols")[1])
+def test_column_lists_are_written_in_code_with_every_row(client, monkeypatch):
+    def explain(*a, **k):
+        raise AssertionError("no AI call for a list of columns")
+
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan(
+        sql="SELECT table_name, column_name, original_header, type FROM _columns ORDER BY column_name"))
+    monkeypatch.setattr(llm, "explain_result", explain)
     sid = upload(client)
-    ask(client, sid, "what are the columns?")
-    assert seen["all_rows"] is True
-    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan())
-    ask(client, sid)
-    assert seen["all_rows"] is False
-
-
-def test_explain_sends_all_rows_only_when_asked():
-    sent = []
-
-    class Fake:
-        def __init__(self):
-            self.chat = self
-            self.completions = self
-
-        def create(self, **kw):
-            sent.append(json.loads(kw["messages"][1]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
-            msg = type("M", (), {"content": "ok"})
-            return type("C", (), {"choices": [type("Ch", (), {"message": msg})]})
-
-    rows = [[f"c{i}", "x", "text"] for i in range(80)]
-    llm.explain_result("q", ["column_name", "original_header", "type"], rows, 80, False, client=Fake())
-    llm.explain_result("q", ["column_name", "original_header", "type"], rows, 80, False, client=Fake(), all_rows=True)
-    assert len(sent[0]["rows"]) == 30 and sent[0]["truncated"] is True
-    assert len(sent[1]["rows"]) == 80 and sent[1]["truncated"] is False
+    text = ask(client, sid, "what are the columns?").json()["explanation"]
+    assert text.splitlines() == [
+        "**orders** has 5 columns:",
+        '- customer_name (original header: "Customer Name") - text',
+        '- order_date (original header: "Order Date") - date',
+        '- order_id (original header: "Order ID") - number',
+        '- paid (original header: "Paid") - true/false',
+        '- total_price (original header: "Total Price") - decimal',
+    ]
 
 
 # ---- the fallback Groq key ----

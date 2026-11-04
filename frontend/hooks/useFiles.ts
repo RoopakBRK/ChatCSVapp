@@ -1,7 +1,7 @@
 "use client";
 
 import { saveChat } from "@/hooks/useChats";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { deleteFile, errorMessage, getFiles, loadSample as fetchSample, uploadFromUrl, uploadOne } from "@/lib/api";
 import type { FileSummary, Relationship, SessionFiles, UploadResponse } from "@/lib/api";
 
@@ -17,8 +17,14 @@ export type FileProgress = {
 const SESSION_KEY = "chatcsv.session_id";
 const GONE = "The files for this chat are no longer available. Add them again with + to see its tables and charts.";
 
-/** Owns the active upload session: its id, the table summaries, the links between tables. */
-export function useFiles() {
+/** A session id is 32 hex characters (the backend's uuid4().hex). */
+export const isSessionId = (id: string | null | undefined): id is string => !!id && /^[0-9a-f]{32}$/.test(id);
+
+/**
+ * Owns the active upload session: its id, the table summaries, the links between tables.
+ * `urlId` is the id in the address (/chat/<id>); without one, the chat you were last in is reopened.
+ */
+export function useFiles(urlId: string | null) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileSummary[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
@@ -41,9 +47,11 @@ export function useFiles() {
     setStarters(data?.starter_questions ?? []);
   }, []);
 
-  // After a reload, pick up the session the user was last in.
+  // On load, open the chat in the address, or else the one the user was last in.
+  const firstUrlId = useRef(urlId);
   useEffect(() => {
-    const saved = localStorage.getItem(SESSION_KEY);
+    const fromUrl = firstUrlId.current;
+    const saved = fromUrl ?? localStorage.getItem(SESSION_KEY);
     const lookup = saved ? getFiles(saved).then((d) => ({ d, e: null as unknown })).catch((e) => ({ d: null, e })) : Promise.resolve(null);
     lookup.then((res) => {
       if (saved && res) {
@@ -52,10 +60,12 @@ export function useFiles() {
           setSessionId(saved);
         } else if (res.d) {
           setSessionId(saved);
+          localStorage.setItem(SESSION_KEY, saved);
           saveChat(saved, {});
           apply(res.d);
         } else {
           localStorage.removeItem(SESSION_KEY); // session expired on the server
+          if (fromUrl) setError("That chat no longer exists (chats are removed after a day without use). Start a new one below.");
         }
       }
       setReady(true);

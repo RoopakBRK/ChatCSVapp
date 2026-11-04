@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { ApiError, errorMessage, getHistory, runQuery, sendChat } from "@/lib/api";
 import type { ChatAnswer, ChatStep, HistoryMessage } from "@/lib/api";
+import { readEffort } from "./useEffort";
 
 /** `fresh` marks items created in this visit (they animate in); restored history does not. */
 type Base = { id: string; fresh?: boolean };
@@ -92,7 +93,7 @@ export function useChat(sessionId: string | null) {
       controller.current = abort;
       const timer = setTimeout(() => abort.abort(new DOMException("Timed out", "TimeoutError")), CLIENT_DEADLINE_MS);
       try {
-        const res = await sendChat({ message: text, session_id: sessionId }, { signal: abort.signal, onStep: setStep });
+        const res = await sendChat({ message: text, session_id: sessionId, effort: readEffort() }, { signal: abort.signal, onStep: setStep });
         if (res.type === "clarification") {
           add({ id: newId(), kind: "clarification", text: res.question });
           return null;

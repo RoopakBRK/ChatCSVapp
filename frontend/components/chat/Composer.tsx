@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import AddFilesMenu from "@/components/upload/AddFilesMenu";
 import type { FileSummary } from "@/lib/api";
 import { formatCount } from "@/lib/format";
+import EffortMenu from "./EffortMenu";
 import VoiceButton from "./VoiceButton";
 
 type Chip = { text: string; onClick: () => void };
@@ -87,7 +88,7 @@ export default function Composer({ files, followUps, loading, uploading, placeho
         </div>
       )}
 
-      <div className="depth relative flex items-end gap-1 rounded-[28px] bg-card p-2 transition-shadow focus-within:ring-2 focus-within:ring-accent/40">
+      <div className="depth relative flex items-end gap-1 rounded-[28px] bg-card p-2 transition-shadow focus-within:ring-1 focus-within:ring-border-strong">
         {options.length > 0 && (
           <ul id="table-mentions" role="listbox" aria-label="Tables (arrow keys to choose, Enter to insert)" className="depth-2 absolute bottom-full left-12 z-30 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-card p-1">
             {options.map((f, i) => (
@@ -149,8 +150,9 @@ export default function Composer({ files, followUps, loading, uploading, placeho
           disabled={!hasFiles}
           aria-label="Your question"
           aria-describedby={options.length > 0 ? "table-mentions" : undefined}
-          className="min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-msg text-foreground outline-none placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed"
+          className="min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-msg text-foreground no-focus-ring placeholder:text-muted disabled:cursor-not-allowed"
         />
+        <EffortMenu disabled={!hasFiles} />
         <VoiceButton
           disabled={!hasFiles || loading}
           onStart={() => {

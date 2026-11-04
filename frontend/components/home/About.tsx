@@ -1,7 +1,7 @@
 import Section from "./Section";
 
 const FACTS = [
-  { value: "Several files", label: "at once, up to 50 MB each, linked to each other automatically" },
+  { value: "Several files", label: "at once, up to 5 MB each, linked to each other automatically" },
   { value: "Every change", label: "the cleaner makes is listed, so nothing changes your answers quietly" },
   { value: "Every answer", label: "comes with the SQL that produced it and the rows it used" },
 ];

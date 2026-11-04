@@ -1,0 +1,6 @@
+# Secrets: never commit these (the example file is fine).
+.env
+.env.*
+!.env.example
+
+.DS_Store

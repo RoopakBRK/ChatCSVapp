@@ -1,0 +1,10 @@
+# Keep secrets, local installs and uploaded data out of the image.
+.env
+.env.*
+.venv
+data
+tests
+scripts
+.pytest_cache
+**/__pycache__
+**/*.pyc

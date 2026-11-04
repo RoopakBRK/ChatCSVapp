@@ -16,8 +16,8 @@ export default function AnswerCard({ id, question, answer, fresh }: Props) {
   const stat = singleNumber(answer);
 
   return (
-    <div className="group space-y-3">
-      <RevealText text={answer.explanation} animate={fresh} className="whitespace-pre-line text-msg" />
+    <div className="group reply-card w-fit max-w-[90%] space-y-3 px-4 py-3">
+      <RevealText text={answer.explanation} animate={fresh} className="space-y-2 text-msg" />
       {stat && <BigStat column={stat.column} value={stat.value} />}
       <div className="flex flex-wrap items-center gap-2">
         {answer.rows.length === 0 ? (

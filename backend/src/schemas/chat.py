@@ -8,6 +8,8 @@ class ChatRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=2000)
     session_id: str
+    # How hard the model thinks while writing the SQL (Groq's reasoning_effort). Medium is the model's default.
+    effort: Literal["low", "medium", "high"] = "medium"
 
 
 class ChartOut(BaseModel):
