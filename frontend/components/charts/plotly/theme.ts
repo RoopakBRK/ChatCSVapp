@@ -42,7 +42,7 @@ export function readChartTheme(dark: boolean): ChartTheme {
     chart: [1, 2, 3, 4, 5].map((i) => v(`--chart-${i}`, FALLBACK.chart[i - 1])),
     sans: `${v("--font-geist-sans", "")}, system-ui, sans-serif`.replace(/^, /, ""),
     mono: `${v("--font-geist-mono", "")}, ui-monospace, monospace`.replace(/^, /, ""),
-    serif: `${v("--font-instrument-serif", "")}, Georgia, serif`.replace(/^, /, ""),
+    serif: `${v("--font-geist-sans", "")}, system-ui, sans-serif`.replace(/^, /, ""), // titles use Geist too
     tooltipBg: v("--tooltip-bg", FALLBACK.tooltipBg),
     tooltipText: v("--tooltip-text", FALLBACK.tooltipText),
     tooltipBorder: v("--tooltip-border", FALLBACK.tooltipBorder),
@@ -93,10 +93,9 @@ export function hoverLabel(t: ChartTheme) {
   return { bgcolor: t.tooltipBg, bordercolor: t.tooltipBorder, font: { family: t.sans, color: t.tooltipText, size: 12 }, align: "left" };
 }
 
-/** Zoom and pan stay available; the mode bar only shows on hover and has no Plotly logo. */
+/** Plotly's own toolbar is hidden: our chart toolbar has the view switch and downloads. */
 export const CONFIG = {
   displaylogo: false,
   responsive: true,
-  displayModeBar: "hover",
-  modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d", "toImage", "sendDataToCloud"],
+  displayModeBar: false,
 };

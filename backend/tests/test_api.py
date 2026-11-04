@@ -2,12 +2,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from chatapp import session_db, sessions
+from chatapp.config import settings
 from chatapp.main import app
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(sessions, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
     monkeypatch.setattr(session_db, "_sessions", {})
     return TestClient(app)
 
@@ -97,11 +98,15 @@ def test_upload_from_url(client, monkeypatch):
     from api.route import files as files_route
     from chatapp.remote import RemoteFileError
 
-    monkeypatch.setattr(files_route, "fetch_csv", lambda url: ("sheet.csv", b"region,sales\nnorth,5\nsouth,7\n"))
+    def fake_fetch(url, dest):
+        dest.write_bytes(b"region,sales\nnorth,5\nsouth,7\n")
+        return "sheet.csv"
+
+    monkeypatch.setattr(files_route, "fetch_csv", fake_fetch)
     body = client.post("/files/url", json={"url": "https://docs.google.com/spreadsheets/d/abc/edit"}).json()
     assert body["uploaded"] == ["sheet.csv"] and body["files"][0]["row_count"] == 2
 
-    def refuse(url):
+    def refuse(url, dest):
         raise RemoteFileError("Links to private or local network addresses are not allowed.")
 
     monkeypatch.setattr(files_route, "fetch_csv", refuse)
@@ -110,12 +115,14 @@ def test_upload_from_url(client, monkeypatch):
 
 
 def test_health_reports_the_key_without_revealing_it(client, monkeypatch):
-    from chatapp import llm
-    monkeypatch.setattr(llm, "load_dotenv", lambda *a, **k: None)
     monkeypatch.setenv("GROQ_API_KEY", "gsk_secret_value")
     body = client.get("/health").json()
     assert body["groq_key_configured"] is True and "gsk_secret_value" not in str(body)
+    monkeypatch.setenv("GROQ_FALLBACK_API_KEY", "gsk_second")
+    body = client.get("/health").json()
+    assert body["fallback_key_configured"] is True and "gsk_second" not in str(body)
     monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GROQ_FALLBACK_API_KEY", "")
     assert client.get("/health").json()["groq_key_configured"] is False
 
 
@@ -128,7 +135,7 @@ def test_sample_data_streams_each_file(client, tmp_path, monkeypatch):
     (sample / "orders.csv").write_text("order_id,customer_id\n1,1\n2,1\n")
     (sample / "customers.csv").write_text("customer_id,name\n1,a\n")
     (sample / "broken.csv").write_text("a,b\n1,2,3\n")
-    monkeypatch.setattr(files_route, "SAMPLE_DIR", sample)
+    monkeypatch.setattr(settings, "sample_data_dir", sample)
 
     events = [json.loads(line) for line in client.post("/files/sample", json={}).text.splitlines()]
     assert events[0]["type"] == "start" and events[0]["files"] == ["broken.csv", "customers.csv", "orders.csv"]
@@ -144,6 +151,6 @@ def test_sample_data_missing(client, tmp_path, monkeypatch):
     import json
     from api.route import files as files_route
 
-    monkeypatch.setattr(files_route, "SAMPLE_DIR", tmp_path / "nope")
+    monkeypatch.setattr(settings, "sample_data_dir", tmp_path / "nope")
     events = [json.loads(l) for l in client.post("/files/sample", json={}).text.splitlines()]
-    assert events == [{"type": "error", "status": 404, "message": "The sample data isn't available on this server."}]
+    assert events == [{"type": "error", "status": 404, "code": "sample_unavailable", "message": "The sample data isn't available on this server."}]

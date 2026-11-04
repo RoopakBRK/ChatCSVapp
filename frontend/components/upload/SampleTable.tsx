@@ -18,7 +18,7 @@ export default function SampleTable({ columns, rows }: { columns: ColumnInfo[]; 
           {rows.map((row, i) => (
             <tr key={i}>
               {columns.map((c) => (
-                <td key={c.name} className="py-0.5 pr-3">
+                <td key={c.name} className="py-1 pr-3">
                   {row[c.name] === null ? <span className="text-muted">null</span> : formatValue(row[c.name])}
                 </td>
               ))}

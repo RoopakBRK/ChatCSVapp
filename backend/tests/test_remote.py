@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from chatapp import remote
+from chatapp.config import settings
 from chatapp.remote import RemoteFileError, check_public, direct_link, fetch_csv
 
 
@@ -51,17 +52,21 @@ def test_non_public_or_odd_links_are_refused(url):
         check_public(url, resolve)
 
 
-def test_fetches_a_csv_and_names_it():
+DEST = __import__("pathlib").Path(__import__("tempfile").gettempdir()) / "csvchat-test-fetch.part"
+
+
+def test_fetches_a_csv_and_names_it(tmp_path):
     def handler(request):
         return httpx.Response(200, headers={"content-type": "text/csv",
                                             "content-disposition": 'attachment; filename="Sales Q1.csv"'}, content=b"a,b\n1,2\n")
-    name, data = fetch_csv("https://data.example.com/download?id=1", client(handler), PUBLIC)
-    assert (name, data) == ("Sales Q1.csv", b"a,b\n1,2\n")
+    dest = tmp_path / "in.part"
+    assert fetch_csv("https://data.example.com/download?id=1", dest, client(handler), PUBLIC) == "Sales Q1.csv"
+    assert dest.read_bytes() == b"a,b\n1,2\n"
 
 
-def test_name_falls_back_to_the_path_and_gets_csv_extension():
+def test_name_falls_back_to_the_path_and_gets_csv_extension(tmp_path):
     handler = lambda request: httpx.Response(200, headers={"content-type": "text/plain"}, content=b"a\n1\n")
-    assert fetch_csv("https://data.example.com/files/report", client(handler), PUBLIC)[0] == "report.csv"
+    assert fetch_csv("https://data.example.com/files/report", tmp_path / "in.part", client(handler), PUBLIC) == "report.csv"
 
 
 def test_a_redirect_to_a_private_address_is_blocked():
@@ -70,26 +75,26 @@ def test_a_redirect_to_a_private_address_is_blocked():
             return httpx.Response(302, headers={"location": "http://evil.example.com/secret.csv"})
         raise AssertionError("must never connect to the private host")
     with pytest.raises(RemoteFileError, match="private or local"):
-        fetch_csv("https://data.example.com/x.csv", client(handler), PUBLIC)
+        fetch_csv("https://data.example.com/x.csv", DEST, client(handler), PUBLIC)
 
 
 def test_too_many_redirects():
     handler = lambda request: httpx.Response(302, headers={"location": "https://data.example.com/again"})
     with pytest.raises(RemoteFileError, match="too many"):
-        fetch_csv("https://data.example.com/x.csv", client(handler), PUBLIC)
+        fetch_csv("https://data.example.com/x.csv", DEST, client(handler), PUBLIC)
 
 
 def test_html_pages_and_private_files_explain_what_to_do():
     html = lambda request: httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html>")
     with pytest.raises(RemoteFileError, match="Anyone with the link"):
-        fetch_csv("https://data.example.com/x.csv", client(html), PUBLIC)
+        fetch_csv("https://data.example.com/x.csv", DEST, client(html), PUBLIC)
     forbidden = lambda request: httpx.Response(403)
     with pytest.raises(RemoteFileError, match="isn't public"):
-        fetch_csv("https://data.example.com/x.csv", client(forbidden), PUBLIC)
+        fetch_csv("https://data.example.com/x.csv", DEST, client(forbidden), PUBLIC)
 
 
 def test_size_cap_is_enforced_while_streaming(monkeypatch):
-    monkeypatch.setattr(remote, "MAX_BYTES", 10)
+    monkeypatch.setattr(settings, "max_upload_mb", 10 / (1024 * 1024))
     big = lambda request: httpx.Response(200, headers={"content-type": "text/csv"}, content=b"x" * 50)
-    with pytest.raises(RemoteFileError, match="larger than 50 MB"):
-        fetch_csv("https://data.example.com/x.csv", client(big), PUBLIC)
+    with pytest.raises(RemoteFileError, match="larger than"):
+        fetch_csv("https://data.example.com/x.csv", DEST, client(big), PUBLIC)

@@ -6,21 +6,18 @@ from typing import Iterator
 import duckdb
 from fastapi import HTTPException
 
-from chatapp import llm
-from chatapp.session_db import QUERY_TIMEOUT_SECONDS, get_session
+from api.errors import fail
+from chatapp import history, llm
+from chatapp.config import settings
+from chatapp.session_db import get_session
 from chatapp.sessions import is_valid_session_id
-from schemas.chat import ChartOut, ChatAnswer, ChatClarification, ChatRequest, ChatResponse
+from schemas.chat import ChartOut, ChatAnswer, ChatClarification, ChatReply, ChatRequest, ChatResponse
 from schemas.llm import ChartSpec
 
 logger = logging.getLogger(__name__)
 
 MAX_PIE_SLICES = 12
 SQL_ATTEMPTS = 2  # the first try, plus one repair after a failed query
-QUESTION_DEADLINE_SECONDS = 60.0  # one overall budget for plan + repair + query + explanation
-
-
-def fail(status: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status, detail={"code": code, "message": message})
 
 
 def _is_number(v) -> bool:
@@ -74,8 +71,8 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
     if not files:
         raise fail(409, "no_files", "Upload at least one CSV file before asking a question.")
 
-    deadline = time.monotonic() + QUESTION_DEADLINE_SECONDS
-    history = [t.model_dump() for t in req.history]
+    deadline = time.monotonic() + settings.question_deadline_seconds  # one budget for the whole question
+    turns = history.llm_turns(req.session_id)  # earlier questions and replies, saved on the server
     feedback: list[dict[str, str]] = []
     plan = None
     result = None
@@ -83,10 +80,15 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
     try:
         for attempt in range(SQL_ATTEMPTS):
             yield _step("querying")  # the model reads the question and writes the SQL
-            plan = llm.generate_plan(req.message, files, db.relationships, history, feedback, deadline=deadline)
+            plan = llm.generate_plan(req.message, files, db.relationships, turns, feedback, deadline=deadline)
             if plan.needs_clarification:
                 question = plan.question or "Could you tell me more about what you need?"
+                _save(req, history.entry("assistant", "clarification", question))
                 yield {"type": "result", "data": ChatClarification(question=question)}
+                return
+            if plan.reply:  # "hi", "what can you do?": answered in words, no data needed
+                _save(req, history.entry("assistant", "reply", plan.reply))
+                yield {"type": "result", "data": ChatReply(text=plan.reply)}
                 return
             # The SQL is written; it is checked (read-only, single statement) and run against the tables.
             yield _step("running")
@@ -94,7 +96,7 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
             if left <= 0:
                 raise llm.LLMTimeoutError("deadline reached before the query could run")
             try:
-                result = db.run_query(plan.sql, timeout=min(QUERY_TIMEOUT_SECONDS, left))
+                result = db.run_query(plan.sql, timeout=min(settings.query_timeout_seconds, left))
                 break
             except duckdb.Error as exc:
                 logger.info("SQL failed (attempt %d): %s | %s", attempt + 1, exc, plan.sql)
@@ -113,7 +115,8 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
         chart = check_chart(plan.chart, columns, rows)  # keep the suggested chart only if it fits the data
         yield _step("explaining")
         try:
-            explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated, deadline=deadline)
+            explanation = llm.explain_result(req.message, columns, rows, len(rows), truncated, deadline=deadline,
+                                             all_rows=is_column_listing(plan.sql, columns))
         except llm.LLMError:
             logger.exception("Explanation failed; returning the data without it")
             explanation = "Here is what I found." if rows else "No rows matched that question."
@@ -130,10 +133,26 @@ def _answer(req: ChatRequest) -> Iterator[dict]:
         logger.error("LLM failed: %s", exc)
         raise fail(502, "llm_unavailable", "The AI service didn't respond properly. Please try again in a moment.")
 
+    answer_id = history.new_id()
+    _save(req, history.entry("assistant", "answer", explanation, id=answer_id, answer={
+        "question": req.message, "sql": plan.sql, "chart": chart.model_dump() if chart else None, "row_count": len(rows),
+    }))
     yield {"type": "result", "data": ChatAnswer(
-        explanation=explanation, sql=plan.sql, chart=chart,
+        id=answer_id, explanation=explanation, sql=plan.sql, chart=chart,
         columns=columns, rows=rows, row_count=len(rows), truncated=truncated,
     )}
+
+
+def _save(req: ChatRequest, reply: dict) -> None:
+    """Save the question with its reply. Only answered questions are saved: a failed or stopped one is
+    not, so asking it again never puts it in the model's history twice."""
+    history.append(req.session_id, history.entry("user", "question", req.message), reply)
+
+
+def is_column_listing(sql: str, columns: list[str]) -> bool:
+    """A list of columns (from _columns or information_schema): the model must see every row of it."""
+    s = sql.lower()
+    return "_columns" in s or "information_schema" in s or {"column_name"} <= {c.lower() for c in columns}
 
 
 def answer_question(req: ChatRequest) -> ChatResponse:

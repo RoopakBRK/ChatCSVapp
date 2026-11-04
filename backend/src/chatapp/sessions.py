@@ -1,12 +1,12 @@
 """Per-session storage for uploaded CSV files.
 
-Each session gets its own directory: data/sessions/<session_id>/<file>.csv
+Each session gets its own directory: <DATA_DIR>/<session_id>/<file>.csv (see chatapp/config.py)
 """
 import re
 import uuid
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "sessions"
+from chatapp.config import settings
 
 _SESSION_ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -18,7 +18,7 @@ def is_valid_session_id(value: str) -> bool:
 def session_dir(session_id: str) -> Path:
     if not is_valid_session_id(session_id):
         raise ValueError("Invalid session id")
-    return DATA_DIR / session_id
+    return settings.data_dir / session_id
 
 
 def get_or_create_session(session_id: str | None) -> str:

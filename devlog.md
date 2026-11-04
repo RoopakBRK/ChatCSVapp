@@ -1,12 +1,7 @@
-# Chat history
+# Development log
 
-> This file has two parts.
-> 1. **Development conversation** (below): the running log of the Claude Code session building this app.
-> 2. **App chat log** (after the first `<!-- msg ... -->` marker): written automatically by the web app
->    (`frontend/app/api/chat-log/route.ts`) and reloaded into the UI on page load. Don't put text
->    between those markers by hand; add new development notes in this first part.
-
-## Development conversation
+> The running log of the Claude Code sessions that built CSVChat: each request and what changed.
+> (It used to be the first half of chat.md; the app's own chat history now lives per session on the backend.)
 
 ### 1. Basic frontend
 **You:** Build a basic chat CSV frontend in `page.tsx`, `layout.tsx`, `globals.css`: users ask questions and upload CSV files. Everything chatted should go to `chat.md` so I can see it if I lose the session.
@@ -181,167 +176,153 @@
 
 **Claude:** All of the first list is built and was checked in the browser (on a separate test stack, because the user's dev server served a stale stylesheet). Final pass done so far: contrast audit and fixes (darker light-mode text variants for amber and red, lighter light hover amber, an amber focus ring with a dark edge), and one radius and shadow scale. Not done (usage limit): skeleton loaders, toasts, and the three-size layout check. chattxt.txt holds the user's 17 messages, numbered.
 
----
-
-## App chat log
-<!-- msg role=system ts=2026-11-03T14:29:38.214Z session=3c150fa960b644268de92c13df2ebf18 -->
-**System** · 2026-11-03T14:29:38.214Z
-
-Uploaded: shipments.csv
-
-
-<!-- msg role=user ts=2026-11-03T14:29:53.193Z session=3c150fa960b644268de92c13df2ebf18 -->
-**You** · 2026-11-03T14:29:53.193Z
-
-Tell me what are the columns in this csv file ?
-
-
-<!-- msg role=system ts=2026-11-03T14:30:03.968Z session=3c150fa960b644268de92c13df2ebf18 -->
-**System** · 2026-11-03T14:30:03.968Z
-
-The AI service didn't respond properly. Please try again in a moment.
-<!-- msg role=system ts=2026-11-03T15:12:10.594Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**System** · 2026-11-03T15:12:10.594Z
-
-Uploaded: shipments.csv
-
-
-<!-- msg role=user ts=2026-11-03T15:12:16.613Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**You** · 2026-11-03T15:12:16.613Z
-
-what is the shipments csv about ?
-
-
-<!-- msg role=assistant ts=2026-11-03T15:12:18.062Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**Assistant** · 2026-11-03T15:12:18.062Z
-
-The shipments CSV lists each shipment with its unique ID, the order it belongs to, the date it was shipped, the carrier used, the tracking number, the delivery date, and the current status of the shipment.
-
-```sql
-SELECT column_name, data_type FROM information_schema.columns WHERE table_name='shipments'
-```
-
-<!-- result {"question":"what is the shipments csv about ?","sql":"SELECT column_name, data_type FROM information_schema.columns WHERE table_name='shipments'","chart":null} -->
-
-<!-- msg role=user ts=2026-11-03T15:12:32.096Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**You** · 2026-11-03T15:12:32.096Z
-
-Break this down by carrier
-
-
-<!-- msg role=assistant ts=2026-11-03T15:12:33.422Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**Assistant** · 2026-11-03T15:12:33.422Z
-
-FedEx has 5,000 shipments, UPS has 5,000 shipments, and DHL has 5,000 shipments.
-
-```sql
-SELECT carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY carrier
-```
-
-<!-- result {"question":"Break this down by carrier","sql":"SELECT carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY carrier","chart":{"type":"bar","x":"carrier","y":"shipment_count","title":"Shipments per Carrier"}} -->
-<!-- msg role=user ts=2026-11-03T15:19:52.423Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**You** · 2026-11-03T15:19:52.423Z
-
-Show this by month
-
-
-<!-- msg role=assistant ts=2026-11-03T15:19:54.895Z session=f79a5a7e07ae4ec5ab5d6c32099766c3 -->
-**Assistant** · 2026-11-03T15:19:54.895Z
-
-In November 2023, DHL had 249 shipments, FedEx 332, and UPS 292.  
-In December 2023, DHL had 400 shipments, FedEx 411, and UPS 415.  
-In January 2024, DHL had 415 shipments, FedEx 434, and UPS 410.
-
-```sql
-SELECT date_trunc('month', shipment_date) AS month, carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY month, carrier ORDER BY month, carrier
-```
-
-<!-- result {"question":"Show this by month","sql":"SELECT date_trunc('month', shipment_date) AS month, carrier, COUNT(*) AS shipment_count FROM shipments GROUP BY month, carrier ORDER BY month, carrier","chart":null} -->
-<!-- msg role=system ts=2026-11-03T16:05:49.291Z session=077cef4b847e4253a4faafc7d24f760c -->
-**System** · 2026-11-03T16:05:49.291Z
-
-Uploaded: suppliers.csv, shipments.csv, reviews.csv, payment.csv, products.csv, order_items.csv, orders.csv, customers.csv
-
-
-<!-- msg role=user ts=2026-11-03T16:06:09.120Z session=077cef4b847e4253a4faafc7d24f760c -->
-**You** · 2026-11-03T16:06:09.120Z
-
-what are the columns which are common in all these CSV files ?
-
-
-<!-- msg role=assistant ts=2026-11-03T16:06:11.989Z session=077cef4b847e4253a4faafc7d24f760c -->
-**Assistant** · 2026-11-03T16:06:11.989Z
-
-Nothing matched.
-
-```sql
-SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8
-```
-
-<!-- result {"question":"what are the columns which are common in all these CSV files ?","sql":"SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8","chart":null} -->
-
-<!-- msg role=user ts=2026-11-03T16:06:17.094Z session=077cef4b847e4253a4faafc7d24f760c -->
-**You** · 2026-11-03T16:06:17.094Z
-
-Break this down by transaction status
-
-
-<!-- msg role=assistant ts=2026-11-03T16:06:18.682Z session=077cef4b847e4253a4faafc7d24f760c -->
-**Assistant** · 2026-11-03T16:06:18.682Z
-
-Pending: revenue 526,570.63, orders 1,500  
-Failed: revenue 541,406.89, orders 1,500  
-Completed: revenue 4,316,672.21, orders 12,000
-
-```sql
-SELECT transaction_status, SUM(amount) AS revenue, COUNT(DISTINCT order_id) AS order_count FROM payment GROUP BY transaction_status
-```
-
-<!-- result {"question":"Break this down by transaction status","sql":"SELECT transaction_status, SUM(amount) AS revenue, COUNT(DISTINCT order_id) AS order_count FROM payment GROUP BY transaction_status","chart":{"type":"bar","x":"transaction_status","y":"revenue","title":"Revenue by Transaction Status"}} -->
-
-<!-- msg role=user ts=2026-11-03T16:07:15.499Z session=077cef4b847e4253a4faafc7d24f760c -->
-**You** · 2026-11-03T16:07:15.499Z
-
-what are the columns which are common in all these CSV files?
-
-
-<!-- msg role=assistant ts=2026-11-03T16:07:17.342Z session=077cef4b847e4253a4faafc7d24f760c -->
-**Assistant** · 2026-11-03T16:07:17.342Z
-
-Nothing matched.
-
-```sql
-SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8
-```
-
-<!-- result {"question":"what are the columns which are common in all these CSV files?","sql":"SELECT column_name FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name HAVING COUNT(DISTINCT table_name)=8","chart":null} -->
-
-<!-- msg role=user ts=2026-11-03T16:07:33.608Z session=077cef4b847e4253a4faafc7d24f760c -->
-**You** · 2026-11-03T16:07:33.608Z
-
-what are the columns in all these tables which are different ?
-
-
-<!-- msg role=assistant ts=2026-11-03T16:07:34.732Z session=077cef4b847e4253a4faafc7d24f760c -->
-**Assistant** · 2026-11-03T16:07:34.732Z
-
-Could you clarify what you mean by "different"? Do you want a list of columns that exist in every table but have different data types, or are you looking for columns that contain different values across the tables?
-
-
-<!-- msg role=user ts=2026-11-03T16:07:42.715Z session=077cef4b847e4253a4faafc7d24f760c -->
-**You** · 2026-11-03T16:07:42.715Z
-
-yes
-
-
-<!-- msg role=assistant ts=2026-11-03T16:07:45.711Z session=077cef4b847e4253a4faafc7d24f760c -->
-**Assistant** · 2026-11-03T16:07:45.711Z
-
-Nothing matched.
-
-```sql
-SELECT column_name FROM (SELECT column_name, COUNT(DISTINCT table_name) AS tbl_cnt, COUNT(DISTINCT data_type) AS type_cnt FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name) WHERE tbl_cnt = 8 AND type_cnt > 1
-```
-
-<!-- result {"question":"yes","sql":"SELECT column_name FROM (SELECT column_name, COUNT(DISTINCT table_name) AS tbl_cnt, COUNT(DISTINCT data_type) AS type_cnt FROM information_schema.columns WHERE table_name IN ('customers','order_items','orders','payment','products','reviews','shipments','suppliers') GROUP BY column_name) WHERE tbl_cnt = 8 AND type_cnt \u003e 1","chart":null} -->
-
+### 17. Back to the original look, new layout kept
+**You:** It looks awful: revert to the old fonts and colours (whitish background with bluish and pinkish gradients), keep the new layout.
+
+**Claude:**
+- **Fonts:** Instrument Serif removed. Everything is Geist again, with headings in bold Geist and Geist Mono for numbers and SQL.
+- **Colours:** the original palette is back through the CSS variables:
+  - a white page with soft sky and pink washes
+  - the deeper blue-to-pink chat card, plus gradient sidebar and canvas panels
+  - blue-to-pink buttons
+  - indigo accents, the soft indigo/pink shadows, and the original chart colours (pink lines, sky-indigo-pink bars)
+  - white chart tooltips
+- **Dark mode:** kept; it uses the original dark blue-to-plum palette.
+- **Accessibility:** WCAG AA is kept, so two shades are a little deeper than the originals:
+  - muted text #565c80 (the old #6b7194 was 3.9:1 on the chat card)
+  - the button gradient #2563eb to #db2777 (the old pastel sky gave white labels 2.1:1)
+  - the focus ring is indigo
+- **Layout and features:** unchanged.
+- **Verified in the browser:** light, dark and the front page, on a separate test stack. Lint, types and build pass; 91 backend tests.
+
+### 18. Backend hardening: SQL parser, rollback, cleanup, plain replies, config, errors, chunked uploads
+**You:** The banned-word SQL check rejects valid queries ('call center', 'set', a column "update"); use DuckDB's parser for exactly one SELECT. Make sure model SQL can never save a change to the read-write session.duckdb. Delete idle session folders at startup and periodically. Add a plain-text reply option (the "hi" 502). Add a data-not-instructions prompt rule with clear markers. Put all settings in one env-driven config file. Make every error `{code, message}`. Save uploads to disk in chunks.
+
+**Claude:**
+- **SQL check** (`schemas/llm.py`): `validate_read_only_sql` asks DuckDB's own parser (`extract_statements`). It must find exactly one statement, and that statement must be a SELECT. Words inside values or names no longer matter. Writes, DDL, COPY, ATTACH, PRAGMA, SET, multiple statements and a CTE wrapping an INSERT are all rejected.
+- **Never saved** (`session_db.run_query`): the query is parsed again, then runs inside `BEGIN TRANSACTION … ROLLBACK`. It always rolls back, even on errors. It also keeps the existing no-file-access and locked-config connection.
+- **Disk cleanup:** `cleanup_expired()` deletes session folders idle longer than `SESSION_TTL_SECONDS`.
+  - **Default TTL:** 24 h. This is separate from the 2 h in-memory unload, `SESSION_MEMORY_TTL_SECONDS`.
+  - **Idle time:** the later of the folder's mtime, which is refreshed on use, and the last in-memory use.
+  - **Scope:** only folders named like a session id are touched, and the folder is deleted under the session's lock. Stale half-uploads are removed too.
+  - **Schedule:** it runs at startup and then every `CLEANUP_INTERVAL_SECONDS` (30 min), from a background thread started in main.py's lifespan.
+- **Plain replies:** the model can now return `{"reply": "..."}` for greetings and "what can you do". `/chat` returns `{"type":"reply","text":...}` and the frontend shows it as a normal assistant message. Verified live: "hi" and "what can you do?" now reply instead of 502.
+- **Prompt safety:** the schema and sample values sent to the model are wrapped in `<<<DATA>>> … <<<END DATA>>>`. The prompt says everything inside is data, never instructions. Any markers inside the data itself are neutralised so it can't close the fence early. The explain step uses the same markers.
+- **One config file** (`chatapp/config.py`): it reads env and `backend/.env`.
+  - **Settings:** model, LLM timeout and retries, question deadline, query timeout, row limit, `MAX_UPLOAD_MB` (one place now), link timeout, the two TTLs, cleanup interval, `CORS_ORIGINS`, `DATA_DIR`, `SAMPLE_DATA_DIR`.
+- **Errors:** every error is `{"detail": {"code", "message"}}`, including 404s, validation errors and crashes, through `api/errors.py`.
+  - **Codes:** e.g. `invalid_session`, `session_not_found`, `invalid_file_name`, `file_not_found`, `no_valid_files` (with `rejected`), `sample_unavailable`.
+- **Chunked uploads:** files, linked files and sample files are copied to disk 1 MB at a time, and the size limit is checked while copying. A bad re-upload puts the previous file back.
+- **Checks:** 121 backend tests pass (30 new). Frontend typecheck, lint and build pass.
+
+### 19. ChatGPT-style messages, simpler charts, a cleaner /chat
+**You:** Make messages look like ChatGPT: plain-text answers, my message in a small grey bubble on the right, copy/SQL/table/CSV/pin as small icons on hover, the chart in one bordered box under the text. One-series charts in the accent colour only, light gridlines, axis labels, 12.4k and $1.2m, every chart 320px. Hide Plotly's toolbar, remove 3D. No gaps or padding around the panels. Canvas closed until I click to see a chart or table. 14px interface, 15px messages, 20px headings; spacing only 4/8/12/16/24; cards 8px corners, only chips fully round. Shorten or remove text that isn't needed.
+
+**Claude:**
+- **Messages:**
+  - answers are plain text with no card
+  - your messages are a grey bubble on the right
+  - clarifications have a thin accent line on the left
+  - errors are a small tinted box with Retry
+  - copy, SQL, table, CSV and pin are 16px icons that show on hover or keyboard focus, and always on touch screens
+- **Charts:**
+  - one bordered box under the answer: title, a Bars/Line/Table (More) switch, PNG, and open-in-canvas
+  - one-series charts use only the accent colour: bars, lines, scatter, funnel, radar, histogram, box (donut and treemap keep several colours)
+  - light gridlines, axis labels, and 12/14px chart text
+  - numbers like 12.4k and $1.2m (lowercase units)
+  - every chart is 320px
+  - Plotly's toolbar is hidden; the 3D view, full-screen mode and bar shadows are gone
+- **Layout:**
+  - no gaps or padding around the sidebar, chat and canvas; they meet edge to edge with 1px borders
+  - the header is just the title, the theme switch and a canvas icon; the table chips stay in the sidebar only
+- **Canvas:**
+  - stays closed after uploads and when opening a past chat
+  - opens only when you open a chart (↗ icon), pin an answer, or click the canvas button
+  - shows the opened answer first, then pinned ones, then your tables
+- **Scale:**
+  - text uses three tokens: `text-ui` 14px, `text-msg` 15px, `text-head` 20px
+  - spacing uses only 4/8/12/16/24px
+  - cards, buttons, menus and the composer have 8px corners
+  - only chips (and small status dots and spinners) are fully round
+  - the user bubble uses 16px corners
+- **Less text:**
+  - shortcut hints, the "Try asking" label, "no files to hand?" and the "Pin to canvas…" box are gone
+  - progress is one line ("Writing the query… 2/4"); the composer's button is the stop button
+  - shorter empty-state, upload and canvas copy
+  - "1 column typed" now uses the singular
+- **Checked in the browser** in light and dark on a separate test stack. Lint, types and build pass.
+
+### 20. Three panels: History · Chat · Results
+**You:** Rounded chat tiles and no rectangle box while chatting. Redo /chat as three panels (history, chat, results). Rename "canvas" to "results" everywhere. On desktop results is always open, starts at ~45% width, resizable from its left edge, chat never under 420px. Results shows one answer at a time (newest by default): the question as title, Chart / Table / SQL tabs, a chart that fills the panel with the type switcher, fullscreen, PNG and CSV below it, and a "3 of 5" control. In the chat, answers show only text plus a chip like "line chart · 12 rows" that opens it in results and is highlighted when shown; big stats stay. Remove pins. Move cleaned table details out; clicking a table in the sidebar shows its details in results. Empty state: "Charts and tables for your answers will show here." Below 1280px results slides over the chat from a header button; on mobile a Chat / Results switch. Layout and naming only, not the backend.
+
+**Claude:**
+- **Rounded, no boxes:**
+  - your messages are 20px-rounded tiles
+  - the question box is a rounded pill with round +, mic and send buttons
+  - charts no longer appear in the chat
+- **Desktop (1280px and up):** History, then Chat, then Results.
+  - Results is always open and starts at 45% of the chat + results area.
+  - Drag its left edge to resize (arrow keys work too; double-click resets). The width is remembered.
+  - The chat column never goes below 420px; checked by dragging all the way left, and it stopped at exactly 420px.
+- **Results panel** (`components/chat/ResultsPanel.tsx`):
+  - The question is the title, with "2 of 2" ‹ › to move between every answer in this chat. The newest answer takes over automatically.
+  - **Tabs:** Chart, Table, SQL.
+  - **Chart tab:** the chart fills the panel's width and the height left over. Below it: Bars / Line / Table / More, fullscreen (browser fullscreen), PNG, CSV.
+  - **Single-number answers:** shown as the big stat.
+  - **Answers without a chart:** open on the Table tab.
+  - **Empty state:** "Charts and tables for your answers will show here."
+- **Chat answers:**
+  - text, plus a chip like "line chart · 13 rows" or "bar chart · 3 rows"
+  - clicking the chip shows that answer in Results, and the shown one is highlighted
+  - big stats stay
+  - Copy and CSV icons on hover
+  - pins and the inline SQL/table toggles are removed (`usePins` deleted)
+- **Tables:**
+  - the sidebar's table chips are now buttons
+  - clicking one shows its columns, cleaning steps, sample rows, links to other tables and the remove button in Results
+  - "← Answers" goes back
+- **Smaller screens:**
+  - 768–1279px: a **Results** button in the header slides the panel over the chat (close with ✕, Esc or the dimmed area)
+  - phones: a **Chat | Results** switch in the header
+  - both side panels now have a solid backing colour, so the chat doesn't show through
+- **Renamed:** "canvas" is now "Results" in components, props, labels, aria labels, the Esc shortcut text and CSS (`surface-results`).
+- **Deleted:** CanvasPanel, ResultCard, Collapsible, LazyMount, DataSummary.
+- **Backend:** unchanged.
+- **Checked in the browser:**
+  - desktop dark and light
+  - 1100px overlay and the 390px switch
+  - the pager, tabs, chip highlight, table details, and the 420px limit
+- **Build:** lint, types and build pass.
+
+### 21. Private history per session, a Results thread, grey dark mode, fallback key
+**You:** Tables off the left panel; better contrast; name the results panel; a bin icon on each chat (on hover) to delete it; dark grey instead of dark blue in dark mode; the right panel should be per chat session, like a thread of the session's charts, tables and SQL, with charts that don't fill the whole space; wire up the fallback Groq key from .env. chat.md is one file shared by everyone, so move chat history to the backend per session, add an endpoint that returns only the current session's history, remove the chat-log route and chat.md, stop sending history from the browser, and make /query re-run a saved answer by id instead of raw SQL. Column questions should show the original header next to the cleaned name, with plain type names, and the model should see every row of a column list (not stop at 30). Retrying a failed question sent it twice; fix that.
+
+**Claude:** (asked first: keep this dev log as devlog.md, migrate old chats, and put tables behind a "Tables" button in Results — all three agreed)
+- **History on the backend:**
+  - Each chat's messages are saved in its own session folder (`data/sessions/<id>/history.json`).
+  - `GET /sessions/{id}/history` returns only that chat. There is no endpoint that lists chats, so nobody can see anyone else's.
+  - `DELETE /sessions/{id}` deletes a chat with its files and tables.
+  - The Next `/api/chat-log` route is removed, and `chat.md` is gone; this log now lives in **devlog.md**.
+- **No history from the browser:**
+  - `/chat` takes only `{message, session_id}` and reads earlier turns from the saved history.
+  - A question is saved only together with its reply (answer, clarifying question or plain reply). A failed or stopped question is never saved, so **retry no longer puts it in the prompt twice**.
+- **`/query` by answer id:** each answer has an id. `/query` takes `{session_id, answer_id}`, looks up the saved SQL, and runs it with the same checks. Raw SQL is rejected.
+- **Upload notices** ("Uploaded: …", "Loaded sample data: …", "Removed …") are saved by the backend.
+- **Chat list in the browser:**
+  - The sidebar lists the chats this browser started (localStorage), newest first.
+  - A bin icon appears on hover and asks "Delete this chat?" before deleting.
+- **Old chats:** `backend/scripts/migrate_chat_md.py` moved 3 old chats from chat.md into their session folders and printed a one-time link (`/chat#chats=…`) that adds them to the browser's list. The ids are not put in the app code, so other visitors never get them.
+- **Columns:**
+  - The backend keeps a `_columns(table_name, column_name, original_header, type)` table with plain types (number, decimal, date, date and time, text, true/false). The model is told to use it for column questions and to show the original header next to each name.
+  - The model sees every row of a column list, up to 500, instead of 30, and lists them all.
+  - The table details in Results show Column · CSV header · Type, and cleaning steps say "text → decimal".
+- **Fallback Groq key:** if `GROQ_API_KEY` is rate limited, refused (401/403), down or times out, the next try goes straight to `GROQ_FALLBACK_API_KEY`. `/health` reports both keys (never their values).
+- **Results is a thread for the chat:**
+  - Titled "Results" with a count, it holds every result of the session in order, newest at the bottom. Each card has the question, Chart/Table/SQL tabs and a 320px chart with its controls.
+  - Clicking a chip in the chat scrolls to its card and highlights both.
+  - "Answers | Tables" switches to the cleaned tables.
+- **Sidebar and colours:**
+  - Tables are removed from the sidebar, and chat titles use full-contrast text.
+  - Dark mode is now neutral grey (#141414 / #1b1b1b / #232323, text #ededed, muted #a8a8a8) with the same indigo accent.
+  - Light-mode secondary text is darker.
+- **Tests:** 141 backend tests pass (20 new). Lint, types and build pass.

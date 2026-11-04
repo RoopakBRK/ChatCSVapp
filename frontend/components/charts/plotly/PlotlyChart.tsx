@@ -44,10 +44,10 @@ export default function PlotlyChart({ figure, height }: { figure: Figure; height
   return (
     <div className="chart-in relative" style={{ height }}>
       <div ref={el} className="h-full w-full" />
-      {state === "loading" && <div className="absolute inset-0 flex items-center justify-center text-xs text-muted">Drawing chart…</div>}
+      {state === "loading" && <div className="absolute inset-0 flex items-center justify-center text-ui text-muted">Drawing chart…</div>}
       {state === "error" && (
-        <div role="alert" className="absolute inset-0 flex items-center justify-center text-xs text-error-ink">
-          The chart could not be drawn. The data is still in the table.
+        <div role="alert" className="absolute inset-0 flex items-center justify-center text-ui text-error-ink">
+          Couldn’t draw this chart. Switch to Table to see the data.
         </div>
       )}
     </div>

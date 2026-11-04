@@ -4,12 +4,12 @@ export default function RelationshipList({ relationships }: { relationships: Rel
   if (relationships.length === 0) return null;
   return (
     <section>
-      <h2 className="font-sans mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+      <h2 className="font-sans mb-2 text-ui font-semibold text-muted">
         Links between tables ({relationships.length})
       </h2>
-      <ul className="space-y-1.5 text-xs">
+      <ul className="space-y-2 text-ui">
         {relationships.map((r) => (
-          <li key={r.join} className="rounded-xl border border-border bg-card px-3 py-2">
+          <li key={r.join} className="rounded-lg border border-border bg-card px-3 py-2">
             <span className="font-mono">{r.join}</span>
             <span className="block text-muted">
               {r.cardinality === "one_to_one" ? "one-to-one" : "many-to-one"} · {r.match_pct}% match

@@ -4,7 +4,8 @@ The server fetches the URL itself, so it must never be usable to reach internal 
   * only http and https;
   * the host must resolve to public addresses only (no localhost, private, link-local, cloud
     metadata or reserved ranges), checked again on every redirect, which is followed by hand;
-  * at most 3 redirects, a 20 s timeout and a 50 MB cap, enforced while streaming.
+  * at most 3 redirects, a timeout (LINK_FETCH_TIMEOUT_SECONDS) and the upload size cap
+    (MAX_UPLOAD_MB), enforced while streaming the file to disk in chunks.
 
 Residual risk (production note): the check resolves the name, then httpx resolves it again when
 connecting, so a hostile DNS server could answer differently the second time (DNS rebinding). In
@@ -13,14 +14,14 @@ production, run fetches through an egress proxy that enforces the same rules, or
 import ipaddress
 import re
 import socket
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import httpx
 
-MAX_BYTES = 50 * 1024 * 1024
-TIMEOUT_SECONDS = 20.0
+from chatapp.config import settings
+
 MAX_REDIRECTS = 3
 
 Resolver = Callable[..., list]
@@ -80,11 +81,13 @@ def _filename(response: httpx.Response, url: str) -> str:
     return name if name.lower().endswith(".csv") else f"{name}.csv"
 
 
-def fetch_csv(url: str, client: httpx.Client | None = None, resolve: Resolver = socket.getaddrinfo) -> tuple[str, bytes]:
-    """Download the file behind a link. Returns (file name, bytes)."""
+def fetch_csv(url: str, dest: Path, client: httpx.Client | None = None, resolve: Resolver = socket.getaddrinfo) -> str:
+    """Download the file behind a link into `dest`, chunk by chunk. Returns the file name to use."""
     url = direct_link(url)
+    limit = settings.max_upload_bytes
+    too_big = f"That file is larger than {settings.max_upload_mb:g} MB."
     own = client is None
-    http = client or httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, headers={"User-Agent": "CSVChat/1.0"})
+    http = client or httpx.Client(timeout=settings.link_fetch_timeout_seconds, follow_redirects=False, headers={"User-Agent": "CSVChat/1.0"})
     try:
         for _ in range(MAX_REDIRECTS + 1):
             check_public(url, resolve)
@@ -102,14 +105,16 @@ def fetch_csv(url: str, client: httpx.Client | None = None, resolve: Resolver = 
                         raise RemoteFileError(
                             "That link opens a web page, not a CSV file. For Google Drive or Sheets, "
                             "share it as 'Anyone with the link'.")
-                    if int(response.headers.get("content-length") or 0) > MAX_BYTES:
-                        raise RemoteFileError("That file is larger than 50 MB.")
-                    content = bytearray()
-                    for chunk in response.iter_bytes():
-                        content += chunk
-                        if len(content) > MAX_BYTES:
-                            raise RemoteFileError("That file is larger than 50 MB.")
-                    return _filename(response, url), bytes(content)
+                    if int(response.headers.get("content-length") or 0) > limit:
+                        raise RemoteFileError(too_big)
+                    size = 0
+                    with dest.open("wb") as out:
+                        for chunk in response.iter_bytes():
+                            size += len(chunk)
+                            if size > limit:
+                                raise RemoteFileError(too_big)
+                            out.write(chunk)
+                    return _filename(response, url)
             except httpx.TimeoutException:
                 raise RemoteFileError("The link took too long to respond.") from None
             except httpx.HTTPError:

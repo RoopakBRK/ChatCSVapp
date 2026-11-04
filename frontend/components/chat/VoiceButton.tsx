@@ -99,9 +99,9 @@ export default function VoiceButton({ disabled, onStart, onText, onError }: Prop
       aria-label={label}
       aria-pressed={listening}
       title={label}
-      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors ${
-        listening ? "listening bg-accent text-on-accent" : "btn-ghost text-muted"
-      } disabled:cursor-not-allowed disabled:opacity-40`}
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${
+ listening ? "listening btn-accent" : "text-muted hover:bg-hover hover:text-foreground"
+ } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <rect x="9" y="3" width="6" height="11" rx="3" />

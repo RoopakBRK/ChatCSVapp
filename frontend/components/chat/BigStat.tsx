@@ -8,12 +8,12 @@ export function singleNumber(answer: ChatAnswer): { column: string; value: numbe
   return typeof v === "number" ? { column: answer.columns[0], value: v } : null;
 }
 
-/** A big number in Geist Mono with a short label underneath. */
+/** One number in a bordered box, with its label underneath. */
 export default function BigStat({ column, value }: { column: string; value: number }) {
   return (
-    <div className="chart-stage rounded-2xl px-5 py-6 text-center">
-      <p className="font-mono text-5xl font-medium tracking-tight tabular-nums text-foreground sm:text-6xl">{formatNumber(column, value)}</p>
-      <p className="mt-2 text-xs uppercase tracking-wider text-muted">{humanize(column)}</p>
+    <div className="inline-block rounded-[20px] bg-card px-4 py-3">
+      <p className="font-mono text-head font-semibold tabular-nums">{formatNumber(column, value)}</p>
+      <p className="text-ui text-muted">{humanize(column)}</p>
     </div>
   );
 }

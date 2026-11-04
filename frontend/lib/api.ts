@@ -83,11 +83,12 @@ export type UploadResponse = SessionFiles & {
 export type ChartType = "bar" | "line" | "pie" | "scatter";
 export type ChartSpec = { type: ChartType; x: string; y: string; title: string };
 
-export type HistoryTurn = { role: "user" | "assistant"; content: string };
-export type ChatRequest = { message: string; session_id: string; history: HistoryTurn[] };
+/** Earlier messages are read from the session's saved history on the server, never sent from here. */
+export type ChatRequest = { message: string; session_id: string };
 
 export type ChatAnswer = {
   type: "answer";
+  id: string; // saved in the session's history; runQuery re-runs it by this id
   explanation: string;
   sql: string;
   chart: ChartSpec | null;
@@ -97,7 +98,9 @@ export type ChatAnswer = {
   truncated: boolean;
 };
 export type ChatClarification = { type: "clarification"; question: string };
-export type ChatResponse = ChatAnswer | ChatClarification;
+/** A plain text answer that needs no data, e.g. for "hi" or "what can you do?". */
+export type ChatReply = { type: "reply"; text: string };
+export type ChatResponse = ChatAnswer | ChatClarification | ChatReply;
 
 /** The stages the backend reports while it works on one question. */
 export type ChatStep = "reading" | "querying" | "running" | "explaining";
@@ -108,16 +111,14 @@ type StreamEvent =
 
 export type QueryResult = { columns: string[]; rows: CellValue[][]; row_count: number; truncated: boolean };
 
-/** What chat.md keeps about an answer so it can be redrawn later (the rows are re-queried, not stored). */
-export type SavedResult = { question: string; sql: string; chart: ChartSpec | null };
-
-/** One saved message of the chat.md log (served by the Next route handler, not the Python backend). */
-export type ChatLogEntry = {
+/** One saved message of a chat, from GET /sessions/{id}/history. Answers are redrawn with runQuery. */
+export type HistoryMessage = {
+  id: string;
   role: "user" | "assistant" | "system";
-  content: string;
+  kind: "question" | "answer" | "clarification" | "reply" | "notice";
+  text: string;
   ts: string;
-  session: string | null; // which upload session (chat) it belongs to
-  result?: SavedResult;
+  answer?: { question: string; sql: string; chart: ChartSpec | null; row_count: number | null } | null;
 };
 
 /* ───────────── Errors ───────────── */
@@ -269,7 +270,7 @@ export function deleteFile(sessionId: string, name: string): Promise<SessionFile
   });
 }
 
-export type Health = { status: string; groq_key_configured: boolean; model: string | null };
+export type Health = { status: string; groq_key_configured: boolean; fallback_key_configured: boolean; model: string | null };
 
 export function getHealth(): Promise<Health> {
   return request<Health>("/health");
@@ -345,31 +346,33 @@ export async function sendChat(
   return result;
 }
 
-/** Re-runs the SQL of an earlier answer against the session's tables. */
-export function runQuery(sessionId: string, sql: string): Promise<QueryResult> {
+/** Re-runs a saved answer of this chat by its id (the browser never sends SQL). */
+export function runQuery(sessionId: string, answerId: string): Promise<QueryResult> {
   return request<QueryResult>("/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, sql }),
+    body: JSON.stringify({ session_id: sessionId, answer_id: answerId }),
   });
 }
 
-/* ───────────── chat.md log (same-origin Next route) ───────────── */
+/* ───────────── chat history (kept per session on the backend) ───────────── */
 
-export async function loadChatLog(): Promise<ChatLogEntry[]> {
+/** The saved messages of one chat; null when the chat no longer exists on the server. */
+export async function getHistory(sessionId: string): Promise<HistoryMessage[] | null> {
   try {
-    const res = await fetch("/api/chat-log");
-    return res.ok ? ((await res.json()) as { messages: ChatLogEntry[] }).messages : [];
-  } catch {
-    return [];
+    return (await request<{ messages: HistoryMessage[] }>(`/sessions/${encodeURIComponent(sessionId)}/history`)).messages;
+  } catch (e) {
+    if (e instanceof ApiError && (e.code === "session_not_found" || e.code === "invalid_session")) return null;
+    throw e;
   }
 }
 
-/** Fire and forget: failing to save history must never get in the user's way. */
-export function appendChatLog(entry: ChatLogEntry): void {
-  fetch("/api/chat-log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(entry),
-  }).catch(() => {});
+/** Delete a chat for good: its files, tables and history. */
+export async function deleteSession(sessionId: string): Promise<void> {
+  try {
+    await request(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  } catch (e) {
+    if (e instanceof ApiError && e.code === "session_not_found") return; // already gone
+    throw e;
+  }
 }

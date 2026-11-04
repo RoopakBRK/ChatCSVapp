@@ -9,117 +9,176 @@
  * <html data-theme="light|dark"> before first paint by the script in app/layout.tsx.
  */
 
-/* Day */
+/* Day (the original light look: white with soft blue and pink) */
 :root {
   color-scheme: light;
-  --bg: #f7f4ee;
+  --bg: #ffffff;
   --panel: #ffffff;
-  --card: #fdfbf7;
-  --border: rgba(27, 33, 51, 0.1);
-  --border-strong: rgba(27, 33, 51, 0.18);
-  --text: #1b2133;
-  --muted: #626a7d;
-  --accent: #b7791f;
-  --accent-hover: #c78a2e; /* lighter on hover, so the dark label keeps AA contrast (6.2:1) */
-  --on-accent: #11151f;
-  --accent-ink: #8a5a14; /* amber for text: #b7791f is only 3.3-3.6:1 on light surfaces */
-  --error-ink: #b91c1c; /* red for text: #dc2626 is 4.4:1 on the page background */
-  --focus: #f5b544;
-  --focus-halo: #1b2133; /* amber alone is 1.7:1 on the light page; the dark edge makes the ring visible (3:1+) */
-  --teal: #0f766e;
+  --card: #ffffff;
+  --border: rgba(99, 102, 241, 0.16);
+  --border-strong: rgba(99, 102, 241, 0.3);
+  --text: #1f2347;
+  --muted: #4a4f6e; /* darker than before so secondary text reads clearly on every panel */
+  --accent: #6366f1; /* indigo: borders, tints, active states */
+  --accent-hover: #4f46e5;
+  --accent-ink: #4f46e5; /* indigo for text (6.3:1) */
+  --on-accent: #ffffff;
+  --teal: #0369a1; /* sky, dark enough for text */
   --success: #047857;
-  --error: #dc2626;
-  --chart-1: #0f766e;
-  --chart-2: #b7791f;
-  --chart-3: #6366f1;
-  --chart-4: #e11d48;
-  --chart-5: #0284c7;
+  --error: #e11d48;
+  --error-ink: #be123c;
+  --chart-1: #6366f1;
+  --chart-2: #ec4899;
+  --chart-3: #0ea5e9;
+  --chart-4: #d946ef;
+  --chart-5: #14b8a6;
+  /* Buttons: a blue-to-pink sweep. White labels stay at 4.6:1+ (the old pastel sky was 2.1:1). */
+  --brand-from: #2563eb;
+  --brand-to: #db2777;
+  --brand-text-from: #0ea5e9;
+  --brand-text-to: #ec4899;
+  /* Page: white with soft sky and pink washes. */
+  --page-bg:
+    radial-gradient(56rem 36rem at -6% -8%, rgba(125, 211, 252, 0.5), transparent 68%),
+    radial-gradient(50rem 34rem at 106% -4%, rgba(249, 168, 212, 0.5), transparent 68%),
+    radial-gradient(48rem 32rem at 104% 106%, rgba(186, 230, 253, 0.46), transparent 68%),
+    radial-gradient(44rem 30rem at -2% 104%, rgba(251, 207, 232, 0.44), transparent 68%),
+    linear-gradient(135deg, #eef8ff 0%, #ffffff 42%, #fff0f8 100%);
+  /* Panels: each tinted with its own soft blue/pink gradient; the chat card a little deeper. */
+  --surface-chat: linear-gradient(160deg, #d9ebfc 0%, #e6e7fc 42%, #f7e0f1 100%);
+  --surface-side: linear-gradient(180deg, rgba(224, 242, 254, 0.92) 0%, rgba(255, 255, 255, 0.9) 48%, rgba(252, 231, 243, 0.92) 100%);
+  --surface-results: linear-gradient(200deg, rgba(252, 231, 243, 0.92) 0%, rgba(255, 255, 255, 0.95) 42%, rgba(224, 242, 254, 0.92) 100%);
+  --focus: #6366f1;
+  --focus-halo: transparent;
+  --tooltip-bg: rgba(255, 255, 255, 0.97);
+  --tooltip-text: #1e1b4b;
+  --tooltip-border: rgba(99, 102, 241, 0.25);
+  --drop-glow: rgba(236, 72, 153, 0.2);
+  --shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(30, 27, 75, 0.06),
+    0 10px 24px -10px rgba(79, 70, 229, 0.28),
+    0 22px 40px -28px rgba(236, 72, 153, 0.35);
+  --shadow-2:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 2px 4px rgba(30, 27, 75, 0.08),
+    0 20px 40px -14px rgba(79, 70, 229, 0.32),
+    0 32px 56px -30px rgba(236, 72, 153, 0.4);
+  --scrim: rgba(30, 27, 75, 0.25);
+  --bubble: #e4e6ec; /* your messages: a small neutral grey bubble */
 
   /* Mixed from the colours above, so they follow the theme automatically. */
-  --glass: color-mix(in srgb, var(--panel) 78%, transparent);
-  --hover: color-mix(in srgb, var(--text) 6%, transparent);
-  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
-  --teal-soft: color-mix(in srgb, var(--teal) 12%, transparent);
-  --error-soft: color-mix(in srgb, var(--error) 12%, transparent);
-  --success-soft: color-mix(in srgb, var(--success) 12%, transparent);
-  --scrim: color-mix(in srgb, #000000 35%, transparent);
-  /* Elevation scale: --shadow for resting surfaces (cards, panels), --shadow-2 for floating layers
-     (menus, popovers, toasts, dialogs). Nothing else casts a shadow. */
-  --shadow: 0 1px 0 color-mix(in srgb, #ffffff 60%, transparent) inset, 0 12px 32px -18px color-mix(in srgb, var(--text) 35%, transparent);
-  --shadow-2: 0 1px 0 color-mix(in srgb, #ffffff 60%, transparent) inset, 0 24px 48px -16px color-mix(in srgb, var(--text) 40%, transparent);
-  --glow-1: rgba(245, 181, 68, 0.06);
-  --glow-2: rgba(45, 212, 191, 0.06);
-  --grain-opacity: 0.035;
-  --glass-blur: blur(18px) saturate(1.15);
-  /* Chart tooltips are a dark glass card in both themes. */
-  --tooltip-bg: rgba(18, 26, 46, 0.94);
-  --tooltip-text: #e8ecf5;
-  --tooltip-border: #ffffff1f;
-  /* Soft amber glow around the drop zone. */
-  --drop-glow: rgba(245, 181, 68, 0.18);
+  --glass: color-mix(in srgb, var(--panel) 72%, transparent);
+  --hover: color-mix(in srgb, var(--accent) 8%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --teal-soft: color-mix(in srgb, var(--teal) 10%, transparent);
+  --error-soft: color-mix(in srgb, var(--error) 10%, transparent);
+  --success-soft: color-mix(in srgb, var(--success) 10%, transparent);
+  --glass-blur: blur(14px);
 }
 
-/* Night: the same tokens, used when the system is dark and no choice was saved... */
+/* Night (neutral dark greys, with the same indigo accent): when the system is dark and nothing was chosen... */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0b1020;
-    --panel: #121a2e;
-    --card: #1a2440;
-    --border: #ffffff14;
-    --border-strong: #ffffff26;
-    --text: #e8ecf5;
-    --muted: #8b95b0;
-    --accent: #f5b544;
-    --accent-hover: #ffc861;
-    --on-accent: #1a1204;
-    --accent-ink: #f5b544;
-    --error-ink: #f87171;
-    --focus-halo: #0b1020;
-    --teal: #2dd4bf;
+    --bg: #141414;
+    --panel: #1b1b1b;
+    --card: #232323;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --text: #ededed;
+    --muted: #a8a8a8;
+    --accent: #a5b4fc;
+    --accent-hover: #c7d2fe;
+    --accent-ink: #a5b4fc;
+    --on-accent: #ffffff;
+    --teal: #7dd3fc;
     --success: #34d399;
-    --error: #f87171;
-    --chart-1: #2dd4bf;
-    --chart-2: #f5b544;
-    --chart-3: #818cf8;
-    --chart-4: #fb7185;
-    --chart-5: #38bdf8;
-    --scrim: color-mix(in srgb, #000000 55%, transparent);
-    --shadow: 0 1px 0 #ffffff0a inset, 0 16px 40px -20px #000000cc;
-  --shadow-2: 0 1px 0 #ffffff0f inset, 0 28px 56px -16px #000000e6;
-    --shadow-2: 0 1px 0 #ffffff0f inset, 0 28px 56px -16px #000000e6;
-    --grain-opacity: 0.05;
+    --error: #fb7185;
+    --error-ink: #fda4af;
+    --chart-1: #818cf8;
+    --chart-2: #f472b6;
+    --chart-3: #38bdf8;
+    --chart-4: #e879f9;
+    --chart-5: #2dd4bf;
+    --brand-text-from: #38bdf8;
+    --brand-text-to: #f472b6;
+    --page-bg:
+      radial-gradient(56rem 36rem at -6% -8%, rgba(99, 102, 241, 0.06), transparent 68%),
+      radial-gradient(50rem 34rem at 106% 106%, rgba(236, 72, 153, 0.05), transparent 68%),
+      linear-gradient(135deg, #141414 0%, #171717 50%, #1a1a1a 100%);
+    --surface-chat: linear-gradient(160deg, #1e1e1e 0%, #1b1b1b 55%, #1d1c1e 100%);
+    --surface-side: linear-gradient(180deg, #171717 0%, #161616 100%);
+    --surface-results: linear-gradient(200deg, #191919 0%, #171717 100%);
+    --focus: #a5b4fc;
+    --focus-halo: transparent;
+    --tooltip-bg: rgba(38, 38, 38, 0.97);
+    --tooltip-text: #ededed;
+    --tooltip-border: rgba(255, 255, 255, 0.16);
+    --drop-glow: rgba(244, 114, 182, 0.22);
+    --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 16px 40px -20px rgba(0, 0, 0, 0.8);
+    --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 28px 56px -16px rgba(0, 0, 0, 0.9);
+    --scrim: rgba(0, 0, 0, 0.5);
+    --bubble: rgba(255, 255, 255, 0.09);
   }
 }
 
 /* ...and when dark was chosen with the toggle. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b1020;
-  --panel: #121a2e;
-  --card: #1a2440;
-  --border: #ffffff14;
-  --border-strong: #ffffff26;
-  --text: #e8ecf5;
-  --muted: #8b95b0;
-  --accent: #f5b544;
-  --accent-hover: #ffc861;
-  --on-accent: #1a1204;
-  --accent-ink: #f5b544;
-  --error-ink: #f87171;
-  --focus-halo: #0b1020;
-  --teal: #2dd4bf;
+  --bg: #141414;
+  --panel: #1b1b1b;
+  --card: #232323;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --text: #ededed;
+  --muted: #a8a8a8;
+  --accent: #a5b4fc;
+  --accent-hover: #c7d2fe;
+  --accent-ink: #a5b4fc;
+  --on-accent: #ffffff;
+  --teal: #7dd3fc;
   --success: #34d399;
-  --error: #f87171;
-  --chart-1: #2dd4bf;
-  --chart-2: #f5b544;
-  --chart-3: #818cf8;
-  --chart-4: #fb7185;
-  --chart-5: #38bdf8;
-  --scrim: color-mix(in srgb, #000000 55%, transparent);
-  --shadow: 0 1px 0 #ffffff0a inset, 0 16px 40px -20px #000000cc;
-  --shadow-2: 0 1px 0 #ffffff0f inset, 0 28px 56px -16px #000000e6;
-  --grain-opacity: 0.05;
+  --error: #fb7185;
+  --error-ink: #fda4af;
+  --chart-1: #818cf8;
+  --chart-2: #f472b6;
+  --chart-3: #38bdf8;
+  --chart-4: #e879f9;
+  --chart-5: #2dd4bf;
+  --brand-text-from: #38bdf8;
+  --brand-text-to: #f472b6;
+  --page-bg:
+    radial-gradient(56rem 36rem at -6% -8%, rgba(99, 102, 241, 0.06), transparent 68%),
+    radial-gradient(50rem 34rem at 106% 106%, rgba(236, 72, 153, 0.05), transparent 68%),
+    linear-gradient(135deg, #141414 0%, #171717 50%, #1a1a1a 100%);
+  --surface-chat: linear-gradient(160deg, #1e1e1e 0%, #1b1b1b 55%, #1d1c1e 100%);
+  --surface-side: linear-gradient(180deg, #171717 0%, #161616 100%);
+  --surface-results: linear-gradient(200deg, #191919 0%, #171717 100%);
+  --focus: #a5b4fc;
+  --focus-halo: transparent;
+  --tooltip-bg: rgba(38, 38, 38, 0.97);
+  --tooltip-text: #ededed;
+  --tooltip-border: rgba(255, 255, 255, 0.16);
+  --drop-glow: rgba(244, 114, 182, 0.22);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 16px 40px -20px rgba(0, 0, 0, 0.8);
+  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 28px 56px -16px rgba(0, 0, 0, 0.9);
+  --scrim: rgba(0, 0, 0, 0.5);
+  --bubble: rgba(255, 255, 255, 0.09);
+}
+
+/*
+ * One type scale: 14px for the interface, 15px for messages, 20px for headings
+ * (text-ui, text-msg, text-head). Spacing in /chat uses only 4, 8, 12, 16 and 24px
+ * (Tailwind 1, 2, 3, 4, 6). Cards have 8px corners (rounded-lg); chips, the question pill and message tiles are rounder.
+ */
+@theme {
+  --text-ui: 14px;
+  --text-ui--line-height: 20px;
+  --text-msg: 15px;
+  --text-msg--line-height: 24px;
+  --text-head: 20px;
+  --text-head--line-height: 28px;
 }
 
 @theme inline {
@@ -151,7 +210,6 @@
   --color-chart-5: var(--chart-5);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-serif: var(--font-instrument-serif);
 }
 
 html,
@@ -162,41 +220,26 @@ body {
 html {
   scroll-behavior: smooth;
   background-color: var(--bg);
-  /* Soft amber glow top-left, teal glow bottom-right. */
-  background-image:
-    radial-gradient(60rem 40rem at -10% -10%, var(--glow-1), transparent 70%),
-    radial-gradient(60rem 40rem at 110% 110%, var(--glow-2), transparent 70%);
+  background-image: var(--page-bg); /* white with soft sky and pink washes */
   background-attachment: fixed;
 }
 
 body {
   color: var(--text);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
-  isolation: isolate;
 }
 
-/* A faint film grain over the background (under the content). */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--grain-opacity);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
+/* Headings: Geist, bold and slightly tight, as in the original design. */
 h1, h2, h3, .font-display {
-  font-family: var(--font-instrument-serif), Georgia, serif;
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 ::selection {
   background: var(--accent-soft);
 }
 
-/* One focus ring everywhere: amber #f5b544, with a thin contrasting edge for the light theme. */
+/* One focus ring everywhere (indigo; at least 3:1 against every surface). */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -222,6 +265,18 @@ h1, h2, h3, .font-display {
   backdrop-filter: var(--glass-blur);
 }
 
+/* The three big panels each carry their own soft gradient (over the glass). */
+@utility surface-chat {
+  background: var(--surface-chat);
+}
+/* The side panels sit on a solid colour, so nothing shows through when they slide over the chat. */
+@utility surface-side {
+  background: var(--surface-side), var(--panel);
+}
+@utility surface-results {
+  background: var(--surface-results), var(--panel);
+}
+
 @utility card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -240,13 +295,14 @@ h1, h2, h3, .font-display {
   background: radial-gradient(120% 80% at 50% 100%, var(--accent-soft), transparent 70%);
 }
 
+/* Primary buttons: the blue-to-pink sweep with white labels. */
 @utility btn-accent {
-  background: var(--accent);
+  background-image: linear-gradient(120deg, var(--brand-from), var(--brand-to));
   color: var(--on-accent);
   font-weight: 600;
-  transition: background-color 0.15s;
+  transition: filter 0.15s, transform 0.15s;
   &:hover:not(:disabled) {
-    background: var(--accent-hover);
+    filter: brightness(1.08) saturate(1.05);
   }
   &:disabled {
     opacity: 0.45;
@@ -272,14 +328,14 @@ h1, h2, h3, .font-display {
 @utility chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 4px;
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
   border-radius: 9999px;
-  padding: 0.25rem 0.625rem;
-  font-size: 0.75rem;
-  line-height: 1rem;
+  padding: 4px 12px;
+  font-size: 14px;
+  line-height: 20px;
   white-space: nowrap;
   &:is(button) {
     transition: background-color 0.15s, border-color 0.15s;
@@ -290,8 +346,40 @@ h1, h2, h3, .font-display {
   }
 }
 
+/* Your messages: a soft, well-rounded tile. */
+@utility bubble {
+  background: var(--bubble);
+  border-radius: 20px;
+}
+
+/* The chip of the answer (or the table) shown in results. */
+@utility chip-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+/* A chart in fullscreen: the panel colour behind it, with room around it. */
+.chart-block:fullscreen {
+  background: var(--panel);
+  padding: 24px;
+}
+
+/* Answer actions: hidden until the answer is hovered or focused; always shown on touch screens. */
+.hover-reveal {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.group:hover .hover-reveal,
+.group:focus-within .hover-reveal {
+  opacity: 1;
+}
+@media (hover: none) {
+  .hover-reveal { opacity: 1; }
+}
+
 @utility text-gradient-accent {
-  background-image: linear-gradient(110deg, var(--accent), var(--teal));
+  background-image: linear-gradient(120deg, var(--brand-text-from), var(--brand-text-to));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

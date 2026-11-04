@@ -22,16 +22,16 @@ export function humanize(name: string): string {
 const money = new Intl.NumberFormat(LOCALE, { style: "currency", currency: CURRENCY });
 const plain = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 });
 
-/** Short numbers for axes and stats: 950, 12.4k, 3.8M, 1.2B (one decimal, trailing .0 dropped). */
+/** Short numbers for axes and stats: 950, 12.4k, $1.2m, 3.8b (one decimal, trailing .0 dropped). */
 export function compactNumber(n: number, prefix = ""): string {
-  const units: [number, string][] = [[1e9, "B"], [1e6, "M"], [1e3, "k"]];
+  const units: [number, string][] = [[1e9, "b"], [1e6, "m"], [1e3, "k"]];
   const a = Math.abs(n);
   let text = String(Number(a.toFixed(2)));
   for (let i = units.length - 1; i >= 0; i--) {
     const [size, suffix] = units[i];
     if (a < size) break;
     const rounded = Number((a / size).toFixed(1));
-    // 999,999 rounds to 1000.0k: carry it up to the next unit ("1M") instead.
+    // 999,999 rounds to 1000.0k: carry it up to the next unit ("1m") instead.
     text = rounded >= 1000 && i > 0 ? `${Number((a / units[i - 1][0]).toFixed(1))}${units[i - 1][1]}` : `${rounded}${suffix}`;
   }
   return `${n < 0 ? "-" : ""}${prefix}${text}`;

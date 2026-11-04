@@ -23,7 +23,7 @@ export default function DropTarget({ onFiles, children }: { onFiles: (files: Fil
     >
       {children}
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-panel/85 text-sm font-semibold">
+        <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-panel/85 text-ui font-semibold">
           Drop CSV files to add them
         </div>
       )}

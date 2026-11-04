@@ -152,7 +152,7 @@ def test_call_timeout_is_capped_by_the_deadline(monkeypatch):
     original = client._create
     client.chat.completions.create = lambda **kw: (seen.append(kw["timeout"]), original(**kw))[1]
     llm.generate_plan("q", FILES, [], client=client, deadline=llm.time.monotonic() + 3)
-    assert seen[0] <= 3 < llm.TIMEOUT_SECONDS
+    assert seen[0] <= 3 < llm.settings.llm_timeout_seconds
 
 
 def test_no_retry_when_the_wait_would_pass_the_deadline():

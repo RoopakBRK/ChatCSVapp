@@ -14,7 +14,7 @@ function subscribe(cb: () => void) {
   };
 }
 
-/** A panel width the user can drag, remembered between visits (the sidebar and the canvas use it). */
+/** A panel width the user can drag, remembered between visits (the sidebar uses it). */
 export function usePanelWidth({ key, min, max, initial }: Options) {
   // The server has no localStorage, so it renders the initial width; the browser then shows the saved one.
   const raw = useSyncExternalStore(subscribe, () => localStorage.getItem(key) ?? "", () => "");

@@ -31,7 +31,7 @@ export default function EdgeResizer({ edge, label, width, min, max, initial, cla
       aria-valuenow={width}
       tabIndex={0}
       title="Drag to resize. Double-click to reset."
-      className="group relative z-20 -mx-1.5 hidden w-3 shrink-0 cursor-col-resize touch-none lg:block"
+      className="group relative z-20 -mx-2 hidden w-3 shrink-0 cursor-col-resize touch-none lg:block"
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         start.current = { x: e.clientX, width };

@@ -2,18 +2,16 @@ import type { ChartType } from "@/lib/api";
 import type { FigureContext } from "./figureContext";
 import type { Figure } from "./plotly/loadPlotly";
 import type { ChartTheme } from "./plotly/theme";
-import { area3dFigure } from "./figures3d";
 import {
   barFigure, boxFigure, funnelFigure, histogramFigure, lineFigure, pieFigure, radarFigure, scatterFigure, treemapFigure,
 } from "./figures2d";
 
 export type ChartKind =
-  | "bar" | "line" | "area3d" | "pie" | "scatter" | "funnel" | "treemap" | "radar" | "histogram" | "box" | "table";
+  | "bar" | "line" | "pie" | "scatter" | "funnel" | "treemap" | "radar" | "histogram" | "box" | "table";
 
 export const KIND_LABEL: Record<ChartKind, string> = {
   bar: "Bars",
   line: "Line",
-  area3d: "3D area",
   pie: "Donut",
   scatter: "Scatter",
   funnel: "Funnel",
@@ -27,7 +25,6 @@ export const KIND_LABEL: Record<ChartKind, string> = {
 const BUILDERS: Record<Exclude<ChartKind, "table">, (c: FigureContext, height: number, t: ChartTheme) => Figure> = {
   bar: barFigure,
   line: lineFigure,
-  area3d: area3dFigure,
   pie: pieFigure,
   scatter: scatterFigure,
   funnel: funnelFigure,
@@ -58,7 +55,6 @@ export function suitableKinds(c: FigureContext): ChartKind[] {
     add("radar", n >= 3 && n <= 12);
   } else if (c.xKind === "date") {
     add("line");
-    add("area3d", n >= 2 && n <= 60);
     add("bar");
     add("scatter");
   } else {
@@ -72,7 +68,7 @@ export function suitableKinds(c: FigureContext): ChartKind[] {
   return kinds;
 }
 
-/** The first view: the model's suggestion (bars stay flat; 3D is only offered for areas over time). */
+/** The first view: the model's suggestion, if it suits the data. */
 export function defaultKind(type: ChartType, c: FigureContext): ChartKind {
   const fits = suitableKinds(c);
   const wanted: ChartKind =

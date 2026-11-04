@@ -1,5 +1,6 @@
 "use client";
 
+import { saveChat } from "@/hooks/useChats";
 import { useCallback, useEffect, useState } from "react";
 import { deleteFile, errorMessage, getFiles, loadSample as fetchSample, uploadFromUrl, uploadOne } from "@/lib/api";
 import type { FileSummary, Relationship, SessionFiles, UploadResponse } from "@/lib/api";
@@ -51,6 +52,7 @@ export function useFiles() {
           setSessionId(saved);
         } else if (res.d) {
           setSessionId(saved);
+          saveChat(saved, {});
           apply(res.d);
         } else {
           localStorage.removeItem(SESSION_KEY); // session expired on the server
@@ -78,7 +80,7 @@ export function useFiles() {
     [apply],
   );
 
-  /** Start a fresh chat: the next upload creates a new session. chat.md is left alone. */
+  /** Start a fresh chat: the next upload creates a new session. Earlier chats stay in the list. */
   const startNewSession = useCallback(() => {
     localStorage.removeItem(SESSION_KEY);
     setSessionId(null);
@@ -90,6 +92,7 @@ export function useFiles() {
     (data: UploadResponse) => {
       setSessionId(data.session_id);
       localStorage.setItem(SESSION_KEY, data.session_id);
+      saveChat(data.session_id); // shows in this browser's chat list
       apply(data);
     },
     [apply],
@@ -170,6 +173,7 @@ export function useFiles() {
         settle();
         setSessionId(data.session_id);
         localStorage.setItem(SESSION_KEY, data.session_id);
+      saveChat(data.session_id); // shows in this browser's chat list
         apply(data);
         return { note: `Uploaded from link: ${data.uploaded.join(", ")}`, sessionId: data.session_id };
       } catch (e) {

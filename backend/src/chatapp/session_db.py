@@ -27,6 +27,8 @@ PRODUCTION NOTES - what would change:
 import json
 import logging
 import math
+import os
+import shutil
 import threading
 import time
 from datetime import date, datetime
@@ -36,20 +38,19 @@ from pathlib import Path
 import duckdb
 
 from chatapp.cleaning import CleaningError, CleanResult, clean_csv, safe_table_name
+from chatapp.config import settings
 from chatapp.sessions import is_valid_session_id, session_dir
+from schemas.llm import validate_read_only_sql
 from schemas.files import (
     CleaningStep, ColumnInfo, FileSummary, OutlierFlag, Relationship,
 )
 
 logger = logging.getLogger(__name__)
 
-SESSION_TTL_SECONDS = 2 * 60 * 60
 DB_NAME = "session.duckdb"
 MANIFEST_NAME = "manifest.json"
 MANIFEST_VERSION = 1
 SAMPLE_ROWS = 5
-MAX_RESULT_ROWS = 500
-QUERY_TIMEOUT_SECONDS = 15.0
 MIN_VALUES_FOR_OUTLIERS = 20
 ID_SUFFIXES = ("_id", "_key", "_code", "_number")
 
@@ -85,6 +86,25 @@ def jsonable(v):
     return str(v)
 
 
+COLUMNS_TABLE = "_columns"  # every column of every table, for "which columns are there?" questions
+
+
+def plain_type(sql_type: str) -> str:
+    """A type name anyone can read: number, decimal, date, date and time, text or true/false."""
+    t = sql_type.upper()
+    if t in ("BIGINT", "INTEGER", "SMALLINT", "TINYINT", "HUGEINT", "UBIGINT", "UINTEGER"):
+        return "number"
+    if t.startswith("DECIMAL") or t in ("DOUBLE", "FLOAT", "REAL"):
+        return "decimal"
+    if t == "DATE":
+        return "date"
+    if t.startswith("TIMESTAMP"):
+        return "date and time"
+    if t == "BOOLEAN":
+        return "true/false"
+    return "text"
+
+
 def _is_numeric(sql_type: str) -> bool:
     return sql_type in ("BIGINT", "DOUBLE") or sql_type.startswith("DECIMAL")
 
@@ -117,7 +137,24 @@ class SessionDB:
 
     # ---- persistence -----------------------------------------------------------------------
 
+    def refresh_columns(self) -> None:
+        """Rebuild _columns(table_name, column_name, original_header, type) from the loaded files.
+
+        Written here, outside run_query, so model SQL can read it but never change it."""
+        rows = [
+            (f.table_name, c.name, c.original_name, plain_type(c.type))
+            for f in self.summaries() for c in f.columns
+        ]
+        with self.lock:
+            self.con.execute(
+                f"CREATE OR REPLACE TABLE {COLUMNS_TABLE} "
+                "(table_name VARCHAR, column_name VARCHAR, original_header VARCHAR, type VARCHAR)"
+            )
+            if rows:
+                self.con.executemany(f"INSERT INTO {COLUMNS_TABLE} VALUES (?, ?, ?, ?)", rows)
+
     def _save_manifest(self) -> None:
+        self.refresh_columns()  # every change to the files goes through here
         if not self.db_file:
             return
         manifest = {
@@ -184,7 +221,7 @@ class SessionDB:
         if file_name in self.files:  # re-upload of the same file replaces its table
             return self.files[file_name].table_name
         taken = {f.table_name for f in self.files.values()}
-        base = safe_table_name(file_name)
+        base = safe_table_name(file_name).lstrip("_") or "table"  # "_columns" is ours
         if base in RESERVED:
             base = f"{base}_data"
         name, n = base, 2
@@ -351,17 +388,33 @@ class SessionDB:
 
     # ---- running model-written SQL ---------------------------------------------------------
 
-    def run_query(self, sql: str, max_rows: int = MAX_RESULT_ROWS, timeout: float = QUERY_TIMEOUT_SECONDS):
-        """Run read-only SQL on its own cursor. Returns (columns, rows, truncated).
+    def run_query(self, sql: str, max_rows: int | None = None, timeout: float | None = None):
+        """Run model-written SQL. Returns (columns, rows, truncated).
 
-        Raises duckdb.Error on a bad query or when the timeout interrupts it."""
+        Three layers keep it read-only even though session.duckdb is opened read-write:
+          1. DuckDB's parser must see exactly one SELECT (validate_read_only_sql);
+          2. it runs inside a transaction that is always rolled back, so nothing it does is saved;
+          3. the connection has no file access and its settings are locked.
+        Raises duckdb.Error on a rejected or failing query, or when the timeout interrupts it."""
+        try:
+            sql = validate_read_only_sql(sql)
+        except ValueError as exc:
+            raise duckdb.InvalidInputException(str(exc)) from None
+        max_rows = settings.max_result_rows if max_rows is None else max_rows
+        timeout = settings.query_timeout_seconds if timeout is None else timeout
         cur = self.con.cursor()
         timer = threading.Timer(timeout, cur.interrupt)
         timer.start()
         try:
-            cur.execute(sql)
-            columns = [d[0] for d in cur.description]
-            fetched = cur.fetchmany(max_rows + 1)
+            cur.execute("BEGIN TRANSACTION")
+            try:
+                cur.execute(sql)
+                if cur.description is None:
+                    raise duckdb.InvalidInputException("the query returned no result set")
+                columns = [d[0] for d in cur.description]
+                fetched = cur.fetchmany(max_rows + 1)
+            finally:
+                cur.execute("ROLLBACK")  # whatever the SQL did, none of it is ever saved
         finally:
             timer.cancel()
             cur.close()
@@ -379,10 +432,114 @@ _session_locks: dict[str, threading.Lock] = {}  # one per session id, so builds 
 _registry_lock = threading.Lock()  # only ever held for quick dictionary operations
 
 
+_last_touch: dict[str, float] = {}
+TOUCH_EVERY_SECONDS = 60
+
+
 def _evict_idle() -> None:
-    cutoff = time.time() - SESSION_TTL_SECONDS
+    """Unload sessions idle longer than SESSION_MEMORY_TTL_SECONDS (their files stay; reopening is cheap)."""
+    cutoff = time.time() - settings.session_memory_ttl_seconds
     for sid in [s for s, db in _sessions.items() if db.last_used < cutoff]:
-        _sessions.pop(sid).con.close()  # the files stay on disk; reopening is cheap
+        _sessions.pop(sid).con.close()
+
+
+def _touch(session_id: str) -> None:
+    """Mark the session folder as recently used (its mtime is what the disk cleanup looks at)."""
+    now = time.time()
+    if now - _last_touch.get(session_id, 0) < TOUCH_EVERY_SECONDS:
+        return
+    _last_touch[session_id] = now
+    try:
+        os.utime(session_dir(session_id))
+    except OSError:
+        pass
+
+
+def cleanup_expired(now: float | None = None) -> list[str]:
+    """Delete session folders idle longer than SESSION_TTL_SECONDS. Returns the ids removed.
+
+    Idle time is the later of the folder's mtime (refreshed whenever the session is used) and the
+    in-memory last use. Only folders named like a session id are ever touched."""
+    now = time.time() if now is None else now
+    cutoff = now - settings.session_ttl_seconds
+    root = settings.data_dir
+    if not root.is_dir():
+        return []
+    removed: list[str] = []
+    for folder in sorted(root.iterdir()):
+        sid = folder.name
+        if not folder.is_dir() or not is_valid_session_id(sid):
+            continue
+        if _remove(sid, idle_before=cutoff):
+            removed.append(sid)
+    # Half-received uploads left behind by a crash (normal uploads delete their own).
+    for part in (root / ".incoming").glob("*.part"):
+        try:
+            if part.stat().st_mtime < now - 3600:
+                part.unlink()
+        except OSError:
+            pass
+    if removed:
+        logger.info("Deleted %d idle session folder(s): %s", len(removed), ", ".join(removed))
+    return removed
+
+
+def _remove(session_id: str, idle_before: float | None = None) -> bool:
+    """Close the session and delete its folder (files, database, history). With `idle_before`, only
+    if it hasn't been used since then. True if it was deleted."""
+    folder = session_dir(session_id)
+    with _registry_lock:
+        lock = _session_locks.setdefault(session_id, threading.Lock())
+    deleted = False
+    with lock:  # nobody can open this session while it is being deleted
+        with _registry_lock:
+            db = _sessions.get(session_id)
+            try:
+                last = max(folder.stat().st_mtime, db.last_used if db else 0.0)
+            except OSError:
+                last = None  # already gone
+            if last is not None and (idle_before is None or last < idle_before):
+                if db:
+                    _sessions.pop(session_id)
+            else:
+                db = None
+        if last is not None and (idle_before is None or last < idle_before):
+            if db:
+                with db.lock:
+                    db.con.close()
+            shutil.rmtree(folder, ignore_errors=True)
+            deleted = True
+    if deleted:
+        with _registry_lock:
+            _session_locks.pop(session_id, None)
+            _last_touch.pop(session_id, None)
+    return deleted
+
+
+def delete_session(session_id: str) -> bool:
+    """Delete a chat for good (the bin icon): its files, tables and history. False if it didn't exist."""
+    if not is_valid_session_id(session_id):
+        return False
+    return _remove(session_id)
+
+
+class CleanupThread(threading.Thread):
+    """Runs cleanup_expired() now and then every CLEANUP_INTERVAL_SECONDS until stopped."""
+
+    def __init__(self):
+        super().__init__(name="session-cleanup", daemon=True)
+        self.stopped = threading.Event()
+
+    def run(self) -> None:
+        while not self.stopped.is_set():
+            try:
+                cleanup_expired()
+            except Exception:
+                logger.exception("Session cleanup failed")
+            self.stopped.wait(settings.cleanup_interval_seconds)
+
+    def stop(self) -> None:
+        self.stopped.set()
 
 
 def _read_manifest(folder: Path) -> dict | None:
@@ -426,7 +583,7 @@ def _open_session(session_id: str) -> SessionDB | None:
             logger.warning("Skipping unreadable file %s while restoring session", path)
     if gone and not changed:
         db.relationships = db._detect_relationships()
-        db._save_manifest()
+    db._save_manifest()  # also (re)builds _columns
     return db
 
 
@@ -439,6 +596,7 @@ def get_session(session_id: str) -> SessionDB | None:
         db = _sessions.get(session_id)
         if db:
             db.last_used = time.time()
+            _touch(session_id)
             return db
         lock = _session_locks.setdefault(session_id, threading.Lock())
 
@@ -452,4 +610,5 @@ def get_session(session_id: str) -> SessionDB | None:
             with _registry_lock:
                 _sessions[session_id] = db
         db.last_used = time.time()
+        _touch(session_id)
         return db

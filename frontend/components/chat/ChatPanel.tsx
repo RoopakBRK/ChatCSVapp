@@ -49,18 +49,18 @@ export default function ChatPanel(p: Props) {
   return (
     <DropTarget onFiles={p.onFiles}>
       <div className="flex-1 overflow-y-auto" aria-live="polite">
-        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-4 px-4 py-6">
+        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-4 py-6">
           {p.restored && !hasFiles && p.progress.length === 0 && <EmptyState uploading={p.uploading} onFiles={p.onFiles} onSample={p.onSample} />}
 
           {p.items.map((item) => (
             <MessageBubble key={item.id} item={item} />
           ))}
           <UploadProgress items={p.progress} />
-          {p.loading && <ProgressSteps step={p.step} onStop={p.onStop} />}
+          {p.loading && <ProgressSteps step={p.step} />}
 
           {showStarters && (
             <div className="msg-in">
-              <SuggestionChips label="Try asking" chips={p.starters.slice(0, 4).map((text) => ({ text, onClick: () => p.onSend(text) }))} />
+              <SuggestionChips chips={p.starters.slice(0, 4).map((text) => ({ text, onClick: () => p.onSend(text) }))} />
             </div>
           )}
           <div ref={bottom} />
@@ -79,7 +79,7 @@ export default function ChatPanel(p: Props) {
         followUps={chips}
         loading={p.loading}
         uploading={p.uploading}
-        placeholder={hasFiles ? "Ask about your data… (type @ for a table)" : "Add CSV files with + to begin"}
+        placeholder={hasFiles ? "Ask about your data" : "Add CSV files to begin"}
         onSend={p.onSend}
         onStop={p.onStop}
         onAddFiles={p.onFiles}

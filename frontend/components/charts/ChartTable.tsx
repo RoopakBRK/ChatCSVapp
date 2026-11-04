@@ -7,11 +7,11 @@ type Props = { columns: string[]; rows: CellValue[][]; height: number };
 export default function ChartTable({ columns, rows, height }: Props) {
   return (
     <div className="overflow-auto rounded-lg border border-border" style={{ maxHeight: height }}>
-      <table className="w-full whitespace-nowrap text-xs">
+      <table className="w-full whitespace-nowrap text-ui">
         <thead className="sticky top-0 bg-panel">
           <tr>
             {columns.map((c) => (
-              <th key={c} className="px-3 py-1.5 text-left font-semibold text-muted">
+              <th key={c} className="px-3 py-2 text-left font-semibold text-muted">
                 {humanize(c)}
               </th>
             ))}
@@ -21,7 +21,7 @@ export default function ChartTable({ columns, rows, height }: Props) {
           {rows.map((row, i) => (
             <tr key={i} className="border-t border-border">
               {row.map((cell, j) => (
-                <td key={j} className={`px-3 py-1.5 ${typeof cell === "number" ? "text-right font-mono tabular-nums" : ""}`}>
+                <td key={j} className={`px-3 py-2 ${typeof cell === "number" ? "text-right font-mono tabular-nums" : ""}`}>
                   {cell === null ? <span className="text-muted">null</span> : formatCell(columns[j], cell)}
                 </td>
               ))}

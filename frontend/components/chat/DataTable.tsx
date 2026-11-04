@@ -1,12 +1,13 @@
 import type { ChatAnswer } from "@/lib/api";
 import { formatCell } from "@/lib/chartFormat";
 
+/** The rows of an answer, with the header kept in view while scrolling. */
 export default function DataTable({ answer }: { answer: ChatAnswer }) {
-  if (answer.rows.length === 0) return <p className="text-sm text-muted">The query returned no rows.</p>;
+  if (answer.rows.length === 0) return <p className="text-ui text-muted">The query returned no rows.</p>;
   return (
     <>
-      <div className="max-h-72 overflow-auto">
-        <table className="w-full whitespace-nowrap text-xs">
+      <div className="max-h-80 overflow-auto rounded-lg border border-border">
+        <table className="w-full whitespace-nowrap text-ui">
           <thead className="sticky top-0 bg-panel">
             <tr>
               {answer.columns.map((c) => (
@@ -30,7 +31,7 @@ export default function DataTable({ answer }: { answer: ChatAnswer }) {
         </table>
       </div>
       {answer.truncated && (
-        <p className="mt-2 text-xs text-muted">Showing the first {answer.row_count} rows; the full result is larger.</p>
+        <p className="mt-2 text-ui text-muted">Showing the first {answer.row_count} rows; the full result is larger.</p>
       )}
     </>
   );

@@ -2,17 +2,16 @@
 
 import { createContext, useContext } from "react";
 import type { ChartKind } from "@/components/charts/chartKinds";
-import type { ChatAnswer, FileSummary } from "@/lib/api";
+import type { FileSummary } from "@/lib/api";
 
-/** What answer cards need from the page: chart views, pins, retry, and the canvas. */
+/** What answers in the chat need from the page: chart views, retry, and the results panel. */
 export type ChatUI = {
   files: FileSummary[];
   views: Record<string, ChartKind>;
-  setKind: (answerId: string, kind: ChartKind) => void;
-  isPinned: (answer: ChatAnswer, question: string) => boolean;
-  togglePin: (answerId: string, answer: ChatAnswer, question: string) => void;
   retry: (errorId: string) => void;
-  openInCanvas: (answerId: string) => void;
+  /** The answer currently shown in results (null when a table or nothing is shown). */
+  shownId: string | null;
+  showInResults: (answerId: string) => void;
 };
 
 export const ChatUIContext = createContext<ChatUI | null>(null);

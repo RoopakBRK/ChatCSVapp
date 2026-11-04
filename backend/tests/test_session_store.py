@@ -4,11 +4,12 @@ import time
 import pytest
 
 from chatapp import session_db, sessions
+from chatapp.config import settings
 
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.setattr(sessions, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
     monkeypatch.setattr(session_db, "_sessions", {})
     monkeypatch.setattr(session_db, "_session_locks", {})
     calls = []

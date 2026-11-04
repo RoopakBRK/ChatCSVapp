@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from api.route import chat as chat_route
 from chatapp import llm, session_db, sessions
+from chatapp.config import settings
 from chatapp.main import app
 from schemas.llm import LLMResponse
 
@@ -19,7 +20,7 @@ def plan(**kw):
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
-    monkeypatch.setattr(sessions, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
     monkeypatch.setattr(session_db, "_sessions", {})
     client = TestClient(app)
     sid = client.post("/files", files=[("files", ("orders.csv", ORDERS.encode(), "text/csv"))]).json()["session_id"]
@@ -27,8 +28,8 @@ def setup(tmp_path, monkeypatch):
     return client, sid
 
 
-def ask(client, sid, text="who spent most?", history=None):
-    return client.post("/chat", json={"message": text, "session_id": sid, "history": history or []})
+def ask(client, sid, text="who spent most?"):
+    return client.post("/chat", json={"message": text, "session_id": sid})
 
 
 def test_answer_with_chart(setup, monkeypatch):
@@ -152,17 +153,23 @@ def test_rate_limit_message(setup, monkeypatch):
     assert r.status_code == 429 and r.json()["detail"]["code"] == "rate_limited"
 
 
-def test_query_reruns_saved_sql(setup):
+def test_query_reruns_a_saved_answer_by_id(setup, monkeypatch):
     client, sid = setup
-    r = client.post("/query", json={"session_id": sid, "sql": "SELECT customer, count(*) AS n FROM orders GROUP BY 1 ORDER BY 1;"})
-    assert r.status_code == 200 and r.json()["columns"] == ["customer", "n"] and r.json()["row_count"] == 2
+    monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan())
+    answer = ask(client, sid).json()
+    r = client.post("/query", json={"session_id": sid, "answer_id": answer["id"]})
+    assert r.status_code == 200 and r.json()["columns"] == answer["columns"] and r.json()["rows"] == answer["rows"]
 
 
-def test_query_refuses_writes_and_bad_sessions(setup):
+def test_query_takes_no_raw_sql_and_unknown_ids_fail(setup):
     client, sid = setup
-    assert client.post("/query", json={"session_id": sid, "sql": "DROP TABLE orders"}).status_code == 422
-    assert client.post("/query", json={"session_id": sid, "sql": "SELECT nope FROM orders"}).json()["detail"]["code"] == "query_failed"
-    assert client.post("/query", json={"session_id": "0" * 32, "sql": "SELECT 1"}).status_code == 404
+    r = client.post("/query", json={"session_id": sid, "sql": "SELECT 1"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "invalid_request"
+    r = client.post("/query", json={"session_id": sid, "answer_id": "a" * 32, "sql": "SELECT 1"})
+    assert r.status_code == 422
+    r = client.post("/query", json={"session_id": sid, "answer_id": "a" * 32})
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "answer_not_found"
+    assert client.post("/query", json={"session_id": "bad", "answer_id": "a" * 32}).status_code == 400
 
 
 def test_stream_sends_steps_then_result(setup, monkeypatch):
@@ -170,7 +177,7 @@ def test_stream_sends_steps_then_result(setup, monkeypatch):
 
     client, sid = setup
     monkeypatch.setattr(llm, "generate_plan", lambda *a, **k: plan())
-    r = client.post("/chat/stream", json={"message": "who spent most?", "session_id": sid, "history": []})
+    r = client.post("/chat/stream", json={"message": "who spent most?", "session_id": sid})
     events = [json.loads(line) for line in r.text.splitlines()]
     assert r.headers["content-type"].startswith("application/x-ndjson")
     assert [e["step"] for e in events if e["type"] == "step"] == ["reading", "querying", "running", "explaining"]
@@ -187,9 +194,9 @@ def test_stream_reports_errors_as_events(setup, monkeypatch):
         raise llm.LLMTimeoutError("deadline")
 
     monkeypatch.setattr(llm, "generate_plan", late)
-    events = [json.loads(l) for l in client.post("/chat/stream", json={"message": "q", "session_id": sid, "history": []}).text.splitlines()]
+    events = [json.loads(l) for l in client.post("/chat/stream", json={"message": "q", "session_id": sid}).text.splitlines()]
     assert events[-1] == {"type": "error", "status": 504, "code": "timeout", "message": events[-1]["message"]}
-    assert client.post("/chat/stream", json={"message": "q", "session_id": "0" * 32, "history": []}).text.count("session_not_found") == 1
+    assert client.post("/chat/stream", json={"message": "q", "session_id": "0" * 32}).text.count("session_not_found") == 1
 
 
 def test_timeout_message_on_plain_chat(setup, monkeypatch):

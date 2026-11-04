@@ -1,25 +1,42 @@
-import os
+import logging
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, File, Form, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from api import errors
 from api.route import chat as chat_route
 from api.route import files as files_route
 from api.route import health as health_route
 from api.route import query as query_route
-from schemas.chat import ChatRequest, ChatResponse, QueryRequest, QueryResult
+from api.route import sessions as sessions_route
+from schemas.chat import ChatRequest, ChatResponse, QueryRequest, QueryResult, SessionHistory
+from chatapp.config import settings
+from chatapp.session_db import CleanupThread
 from schemas.files import SampleRequest, SessionFiles, UploadResponse, UrlUploadRequest
 
-app = FastAPI(title="ChatAPP")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-# Frontend origins allowed to call the API. Override with CORS_ORIGINS="a,b".
-origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Delete session folders idle longer than SESSION_TTL_SECONDS: once now, then every
+    # CLEANUP_INTERVAL_SECONDS (see chatapp/config.py).
+    cleanup = CleanupThread()
+    cleanup.start()
+    yield
+    cleanup.stop()
+
+
+app = FastAPI(title="ChatAPP", lifespan=lifespan)
+errors.install(app)  # every error: {"detail": {"code", "message"}}
+
+# Browser origins allowed to call the API: CORS_ORIGINS in chatapp/config.py.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in origins],
+    allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -95,8 +112,20 @@ def chat_stream(req: ChatRequest):
 
 @app.post("/query", response_model=QueryResult, responses={400: {}, 404: {}, 422: {}})
 def query(req: QueryRequest):
-    """Re-run read-only SQL from an earlier answer (used to restore charts and tables in chat history)."""
+    """Re-run a saved answer by its id (used to redraw charts and tables when a past chat is opened)."""
     return query_route.run_saved_query(req)
+
+
+@app.get("/sessions/{session_id}/history", response_model=SessionHistory, responses={400: {}, 404: {}})
+def session_history(session_id: str):
+    """The messages of this one chat (session). There is no way to list other people's chats."""
+    return sessions_route.get_history(session_id)
+
+
+@app.delete("/sessions/{session_id}", responses={400: {}, 404: {}})
+def delete_session(session_id: str):
+    """Delete a chat for good: its files, tables and history."""
+    return sessions_route.remove_session(session_id)
 
 
 if __name__ == "__main__":
