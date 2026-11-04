@@ -386,3 +386,38 @@
   - "Which products have the most order items?" then "Break this down by category" now gives 4 rows (Electronics 7,198, Home & Kitchen 5,277, Accessories 4,631, Furniture 2,894) with a bar chart. Got the same result on two more runs.
   - A 500-row product list gets a short answer that points to the table, with no "30 shown" and no sums.
 - **Tests:** 178 backend tests pass (4 new in `tests/test_llm.py`). Lint, types and build pass.
+
+### 24. README trimmed to the five required sections
+**You:** Write only the assignment's README sections (problem statement, how the system works, setup and run, libraries and why, how evaluation could be performed) in simple words. Remove the screenshots.
+
+**Claude:**
+- `README.md` now has a title, one intro line and five sections:
+  1. The problem
+  2. How the system works (7 steps and a one-line flow)
+  3. Setup and run: the `.env` key, then Docker or without Docker
+  4. Libraries and why: backend and frontend tables
+  5. How evaluation could be performed: correctness, big files, and a table of messy cases
+- **Removed:** the feature list, settings table, limits, folder map, API table and both screenshots. The image files stay in `docs/screenshots`.
+- **Fixed:** the old README said 5 MB in one place. The upload limit is 50 MB (`MAX_UPLOAD_MB`).
+
+### 25. README in the author's own voice, evaluation as paragraphs
+**You:** Write the README as if you wrote it ("we can write 15 to 20 questions…", "we can also use a mix of questions", "same question, different words"), with the evaluation in paragraphs.
+
+**Claude:**
+- **Your voice:** the README now reads as written by you: "I built CSVChat…", "I wanted people to…", "In my app…", "These are the libraries I used and why I picked them". The table column is now "Why I used it".
+- **Section 5** has no bullets or tables any more. It's paragraphs in the "we can…" voice, covering:
+  - correctness: the tests, the accuracy test, the mix of questions, the same question in different words, and the written answer matching the table
+  - big files
+  - messy files and questions
+- **Unchanged:** the setup steps and the facts.
+
+### 26. README as paragraphs, no "I built"
+**You:** No point-wise writing, only paragraphs with paragraph breaks. Don't say "I built this app"; say "this app was built".
+
+**Claude:**
+- **Kept your own edits:** no title or intro line, the one-paragraph problem section, "The AI never does the maths" with no "In this app", the removed flow diagram and "AI busy" line, "Free Groq API key from …", and no "Are the answers correct?" lead-in.
+- **Section 2:** the 7 numbered steps are now 7 short paragraphs.
+- **Section 4:** both library tables are now 3 paragraphs: main backend libraries, smaller backend helpers, and the frontend.
+- **Section 3:** setup reads as sentences around the commands. "Step 1 / Option A / Option B" are gone.
+- **No first person:** "I also added sample data" became "Sample data … is included", and "These are the libraries I used" became "FastAPI was used…, DuckDB was chosen…".
+- **Section 5:** the paragraphs keep their "we can…" voice. The last two bold lead-ins ("Does it handle big files?" and "…messy files…?") are now normal sentence openings, like the one you removed.
